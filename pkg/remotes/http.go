@@ -9,6 +9,24 @@ import (
 	"strings"
 )
 
+type AuthChallengeError struct {
+	challenge string
+	error
+}
+
+func (a AuthChallengeError) GetRegistry(ctx context.Context, providers []OAuth2Provider) (*Registry, error) {
+	return NewRegistryWithOAuth2(ctx, a.challenge, providers)
+}
+
+type RedirectError struct {
+	retry *http.Request
+	error
+}
+
+func (r RedirectError) Retry() (*http.Response, error) {
+	return http.DefaultClient.Do(r.retry)
+}
+
 // Table of endpoints for OCI v2
 // end-1	GET			/v2/														200	404/401
 // end-2	GET / HEAD	/v2/<name>/blobs/<digest>									200	404

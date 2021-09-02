@@ -11,6 +11,16 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+func NewRegistry(host, ns string, client *http.Client) *Registry {
+	return &Registry{
+		client:      client,
+		host:        host,
+		namespace:   ns,
+		descriptors: make(map[reference]*ocispec.Descriptor),
+		manifest:    make(map[reference]*ocispec.Manifest),
+	}
+}
+
 // Registry is an opaqueish type which represents an OCI V2 API registry
 type Registry struct {
 	client      *http.Client

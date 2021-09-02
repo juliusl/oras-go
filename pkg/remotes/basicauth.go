@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/oauth2"
 )
 
@@ -29,13 +28,7 @@ func NewRegistryWithBasicAuthorization(ctx context.Context, ref, username, passw
 		return nil
 	}
 
-	registry := &Registry{
-		client:      client,
-		host:        host,
-		namespace:   ns,
-		descriptors: make(map[reference]*ocispec.Descriptor),
-		manifest:    make(map[reference]*ocispec.Manifest),
-	}
+	registry := NewRegistry(host, ns, client)
 
 	return registry
 }
