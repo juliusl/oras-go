@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	orasRemotes "oras.land/oras-go/pkg/remotes"
-
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/remotes"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	orasRemotes "oras.land/oras-go/pkg/remotes"
 )
 
 type resolver struct {

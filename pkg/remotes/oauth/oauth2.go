@@ -1,12 +1,15 @@
-package remotes
+package oauth
 
 import (
 	"context"
 	"fmt"
 	"regexp"
+
+	"oras.land/oras-go/pkg/remotes"
 )
 
-type OAuth2Provider = func(ctx context.Context, realm, service, scope string) (AccessProvider, error)
+// OAuth2Provider is the concrete implementation of receiving a challenge and returning an access provider
+type OAuth2Provider = func(ctx context.Context, realm, service, scope string) (remotes.AccessProvider, error)
 
 // Challenge header examples...
 // Www-Authenticate: Bearer realm="https://example.azurecr.io/oauth2/token",service="example.azurecr.io"
@@ -19,7 +22,7 @@ var parseBearerChallengeHeaderWithScope = regexp.MustCompile(`Www-Authenticate:.
 var parseNamespaceFromScope = regexp.MustCompile(`repository:(.*):`)
 
 // NewRegistryWithOAuth2
-func NewRegistryWithOAuth2(ctx context.Context, challenge string, providers []OAuth2Provider) (*Registry, error) {
+func NewRegistryWithOAuth2(ctx context.Context, challenge string, providers []OAuth2Provider) (*remotes.Registry, error) {
 	var (
 		realm, service, scope string
 		namespace             string
@@ -45,11 +48,6 @@ func NewRegistryWithOAuth2(ctx context.Context, challenge string, providers []OA
 			continue
 		}
 
-		c, err := access.GetClient(ctx)
-		if err != nil {
-			continue
-		}
-
 		if scope != "" {
 			results = parseNamespaceFromScope.FindAllStringSubmatch(scope, -1)
 			if len(results) > 0 && len(results[0]) > 1 {
@@ -57,7 +55,7 @@ func NewRegistryWithOAuth2(ctx context.Context, challenge string, providers []OA
 			}
 		}
 
-		return NewRegistry(service, namespace, c), nil
+		return remotes.NewRegistry(service, namespace, access), nil
 	}
 
 	return nil, fmt.Errorf("could not find an access provider for registry with challenge %s", challenge)

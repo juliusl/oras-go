@@ -3,8 +3,6 @@ package remotes
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -15,22 +13,18 @@ type manifests struct {
 }
 
 // getDescriptor tries to resolve the reference to a descriptor using the headers
-func (m manifests) getDescriptor(ctx context.Context, client *http.Client) (ocispec.Descriptor, error) {
+func (m manifests) getDescriptor(ctx context.Context, doer Doer) (ocispec.Descriptor, error) {
 	request, err := endpoints.e3HEAD.prepare()(ctx, m.ref.add.host, m.ref.add.ns, m.ref.add.loc)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
 
-	resp, err := client.Do(request)
+	resp, err := doer.Do(ctx, request)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
 
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return ocispec.Descriptor{}, fmt.Errorf("non successful error code %d", resp.StatusCode)
-	}
 
 	d := resp.Header.Get("Docker-Content-Digest")
 	c := resp.Header.Get("Content-Type")
@@ -50,14 +44,17 @@ func (m manifests) getDescriptor(ctx context.Context, client *http.Client) (ocis
 }
 
 // getDescriptorWithManifest tries to resolve the reference by fetching the manifest
-func (m manifests) getDescriptorWithManifest(ctx context.Context, client *http.Client) (*ocispec.Manifest, error) {
+func (m manifests) getDescriptorWithManifest(ctx context.Context, doer Doer) (*ocispec.Manifest, error) {
 	// If we didn't get a digest by this point, we need to pull the manifest
-	request, err := endpoints.e3GET.prepare()(ctx, m.ref.add.host, m.ref.add.ns, m.ref.add.loc)
+	request, err := endpoints.e3GET.prepare()(ctx,
+		m.ref.add.host,
+		m.ref.add.ns,
+		m.ref.add.loc)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.Do(request)
+	resp, err := doer.Do(ctx, request)
 	if err != nil {
 		return nil, err
 	}

@@ -9,22 +9,28 @@ import (
 	"strings"
 )
 
+func NewAuthChallengeError(challenge string) *AuthChallengeError {
+	return &AuthChallengeError{challenge: challenge}
+}
+
+// AuthChallengeError is an opaque type returned when encountering a 401 Unauthorized from the registry
 type AuthChallengeError struct {
 	challenge string
 	error
 }
 
-func (a AuthChallengeError) GetRegistry(ctx context.Context, providers []OAuth2Provider) (*Registry, error) {
-	return NewRegistryWithOAuth2(ctx, a.challenge, providers)
+func NewRedirectError(req *http.Request) *RedirectError {
+	return &RedirectError{retry: req}
 }
 
+// RedirectError is an opaque type returned when encountering a 302 Redirect
 type RedirectError struct {
 	retry *http.Request
 	error
 }
 
-func (r RedirectError) Retry() (*http.Response, error) {
-	return http.DefaultClient.Do(r.retry)
+func (r RedirectError) Retry(client *http.Client) (*http.Response, error) {
+	return client.Do(r.retry)
 }
 
 // Table of endpoints for OCI v2
@@ -55,7 +61,7 @@ var (
 	referenceRegex = regexp.MustCompile(`[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`)
 )
 
-func validate(reference string) (string, string, string, error) {
+func Parse(reference string) (string, string, string, error) {
 	matches := referenceRegex.FindAllString(reference, -1)
 	// Technically a namespace is allowed to have "/"'s, while a reference is not allowed to
 	// That means if you string match the reference regex, then you should end up with basically the first segment being the host
@@ -67,8 +73,12 @@ func validate(reference string) (string, string, string, error) {
 		return matches[0], matches[1], matches[2], nil
 	}
 
+	if len(matches) == 0 {
+		return "", "", "", fmt.Errorf("invalid reference")
+	}
+
 	host := matches[0]
-	namespace := strings.Join(matches[1:len(matches)-1], "")
+	namespace := strings.Join(matches[1:len(matches)-1], "-")
 	ref := matches[len(matches)-1]
 
 	return host, namespace, ref, nil
@@ -201,25 +211,6 @@ func (r req) prepareWithArtifactType() artifactPrepareFunc {
 	}
 }
 
-// func (r req) prepareWithRangeQuery(start, end int) func(context.Context, string, string, string) (*http.Request, error) {
-// 	return func(c context.Context, host, ns, ref string) (*http.Request, error) {
-// 		path := fmt.Sprintf(r.format, ns, ref, start, end)
-// 		url, err := url.Parse("https://" + host + path)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-
-// 		req, err := http.NewRequestWithContext(c, r.method, url.String(), nil)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-
-// 		req.Header.Add("Accept", r.accept)
-
-// 		return req, nil
-// 	}
-// }
-
 var endpoints = struct {
 	e1            req
 	e3HEAD        req
@@ -240,20 +231,6 @@ var endpoints = struct {
 	req{"GET", v2TagsFilterListQuery + v2TagsFilterListQuery, manifestV2json},
 	req{"GET", orasListReferrersFormat, ""},
 	req{"GET", orasGetSignatures, ""},
-}
-
-func newHttpClient() *http.Client {
-	client := &http.Client{}
-	// See basicauth for details on this
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) > 0 && req.URL.Host != via[0].Host && req.Header.Get("Authorization") == via[0].Header.Get("Authorization") {
-			req.Header.Del("Authorization") // if it doesn't exist this is a no-op
-			return nil
-		}
-		return nil
-	}
-
-	return client
 }
 
 // Error & Validation

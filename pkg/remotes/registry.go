@@ -2,18 +2,20 @@ package remotes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"oras-go/pkg/content"
+	"strings"
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func NewRegistry(host, ns string, client *http.Client) *Registry {
+func NewRegistry(host, ns string, provider AccessProvider) *Registry {
 	return &Registry{
-		client:      client,
+		provider:    provider,
 		host:        host,
 		namespace:   ns,
 		descriptors: make(map[reference]*ocispec.Descriptor),
@@ -21,13 +23,115 @@ func NewRegistry(host, ns string, client *http.Client) *Registry {
 	}
 }
 
-// Registry is an opaqueish type which represents an OCI V2 API registry
-type Registry struct {
-	client      *http.Client
-	host        string
-	namespace   string
-	descriptors map[reference]*ocispec.Descriptor
-	manifest    map[reference]*ocispec.Manifest
+type (
+	// Doer is an interface for doing
+	Doer interface {
+		// Do is a function that sends the request and handles the response
+		Do(ctx context.Context, req *http.Request) (*http.Response, error)
+	}
+
+	// Registry is an opaqueish type which represents an OCI V2 API registry
+	Registry struct {
+		host        string
+		namespace   string
+		provider    AccessProvider
+		descriptors map[reference]*ocispec.Descriptor
+		manifest    map[reference]*ocispec.Manifest
+		*http.Client
+	}
+)
+
+// Do is a function that does the request, error handling is concentrated in this method
+func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
+	if r.Client == nil {
+		r.setClient(http.DefaultClient) // TODO make a default anonymous client (tune to fail fast since most things need to be authenticated)
+	}
+
+	resp, err := r.do(req)
+	if err != nil {
+		if errors.Is(err, RedirectError{}) {
+			redirectErr, ok := errors.Unwrap(err).(*RedirectError)
+			if ok {
+				// Can't use the built in client, because it will add the Authorization header
+				// TODO - but still shouldn't use DefaultClient
+				resp, err = redirectErr.Retry(http.DefaultClient)
+				if err != nil {
+					resp.Body.Close()
+					return nil, err
+				}
+
+				return resp, nil
+			} else {
+				resp.Body.Close()
+				return nil, err
+			}
+		}
+
+		if errors.Is(err, AuthChallengeError{}) {
+			challengeError, ok := errors.Unwrap(err).(*AuthChallengeError)
+			if ok {
+				// Check our provider for access
+				access, err := r.provider.GetAccess(challengeError)
+				if err != nil {
+					resp.Body.Close()
+					return nil, err
+				}
+
+				// Get a new client once we have access
+				c, err := access.GetClient(ctx)
+				if err != nil {
+					resp.Body.Close()
+					return nil, err
+				}
+
+				r.setClient(c)
+
+				return r.Do(ctx, req)
+			}
+		}
+
+		resp.Body.Close()
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (r *Registry) setClient(client *http.Client) {
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 &&
+			req.URL.Host != via[0].Host &&
+			req.Header.Get("Authorization") == via[0].Header.Get("Authorization") {
+			req.Header.Del("Authorization")
+			return NewRedirectError(req)
+		}
+		return nil
+	}
+	r.Client = client
+}
+
+// do calls the concrete http client, and handles http related status code issues
+func (r *Registry) do(req *http.Request) (*http.Response, error) {
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		if resp.StatusCode == 401 {
+			c, ok := resp.Header["Www-Authenticate"]
+			if ok {
+				// TODO not sure what the delimitter would be
+				return nil, NewAuthChallengeError(strings.Join(c, ","))
+			}
+		}
+
+		defer resp.Body.Close()
+
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	return resp, nil
 }
 
 type RegistryFunctions struct {
@@ -74,7 +178,7 @@ type reference struct {
 }
 
 // ping ensures that the registry is alive and a registry
-func (r *Registry) ping(ctx context.Context) error {
+func (r *Registry) ping(ctx context.Context, scope string) error {
 	if r == nil {
 		return fmt.Errorf("reference is nil")
 	}
@@ -84,7 +188,7 @@ func (r *Registry) ping(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := r.client.Do(request)
+	resp, err := r.Do(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -105,12 +209,12 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	}
 
 	// ensure the registry is running
-	err = r.ping(ctx)
+	err = r.ping(ctx, "")
 	if err != nil {
 		return "", ocispec.Descriptor{}, err
 	}
 
-	host, ns, loc, err := validate(ref)
+	host, ns, loc, err := Parse(ref)
 	if err != nil {
 		return "", ocispec.Descriptor{}, fmt.Errorf("reference is is not valid")
 	}
@@ -137,7 +241,7 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	m := manifests{ref: manifestRef}
 
 	// Return early if we can get the manifest early
-	desc, err = m.getDescriptor(ctx, r.client)
+	desc, err = m.getDescriptor(ctx, r)
 	if err == nil && desc.Digest != "" {
 		manifestRef.digst = desc.Digest
 		manifestRef.media = desc.MediaType
@@ -147,7 +251,7 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	}
 
 	// Get the manifest to retrieve the desc
-	manifest, err := m.getDescriptorWithManifest(ctx, r.client)
+	manifest, err := m.getDescriptorWithManifest(ctx, r)
 	if err != nil {
 		return "", ocispec.Descriptor{}, err
 	}
@@ -165,7 +269,7 @@ func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadC
 	}
 
 	// ensure the registry is running
-	err := r.ping(ctx)
+	err := r.ping(ctx, "pull")
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +284,7 @@ func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadC
 			digst: desc.Digest,
 			media: desc.MediaType,
 		},
-	}.fetch(ctx, r.client)
+	}.fetch(ctx, r)
 }
 
 func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error) {
@@ -189,7 +293,7 @@ func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifa
 	}
 
 	// ensure the registry is running
-	err := r.ping(ctx)
+	err := r.ping(ctx, "pull")
 	if err != nil {
 		return nil, err
 	}
@@ -205,9 +309,10 @@ func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifa
 			digst: desc.Digest,
 			media: desc.MediaType,
 		},
-	}.discover(ctx, r.client)
+	}.discover(ctx, r)
 }
 
 func (r *Registry) push(ctx context.Context, desc ocispec.Descriptor) (*content.PassthroughWriter, error) {
+
 	return &content.PassthroughWriter{}, fmt.Errorf("push api has not been implemented") // TODO
 }

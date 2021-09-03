@@ -7,6 +7,10 @@ import (
 
 type (
 	AccessProvider interface {
+		GetAccess(challenge *AuthChallengeError) (Access, error)
+	}
+
+	Access interface {
 		GetClient(ctx context.Context) (*http.Client, error)
 	}
 )

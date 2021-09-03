@@ -3,7 +3,6 @@ package remotes
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 )
 
 type artifacts struct {
@@ -11,13 +10,13 @@ type artifacts struct {
 	artifactType string
 }
 
-func (a artifacts) discover(ctx context.Context, client *http.Client) (*Artifacts, error) {
+func (a artifacts) discover(ctx context.Context, doer Doer) (*Artifacts, error) {
 	request, err := endpoints.listReferrers.prepareWithArtifactType()(ctx, a.ref.add.host, a.ref.add.ns, a.ref.digst.String(), a.ref.media, a.artifactType)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.Do(request)
+	resp, err := doer.Do(ctx, request)
 	if err != nil {
 		return nil, err
 	}
