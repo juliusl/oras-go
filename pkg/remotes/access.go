@@ -7,7 +7,7 @@ import (
 
 type (
 	AccessProvider interface {
-		GetAccess(challenge *AuthChallengeError) (Access, error)
+		GetAccess(ctx context.Context, challenge *AuthChallengeError) (Access, error)
 	}
 
 	Access interface {

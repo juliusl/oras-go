@@ -11,7 +11,13 @@ type artifacts struct {
 }
 
 func (a artifacts) discover(ctx context.Context, doer Doer) (*Artifacts, error) {
-	request, err := endpoints.listReferrers.prepareWithArtifactType()(ctx, a.ref.add.host, a.ref.add.ns, a.ref.digst.String(), a.ref.media, a.artifactType)
+	request, err := endpoints.listReferrers.prepareWithArtifactType()(ctx,
+		a.ref.add.host,
+		a.ref.add.ns,
+		a.ref.digst.String(),
+		a.ref.media,
+		a.artifactType)
+
 	if err != nil {
 		return nil, err
 	}

@@ -71,7 +71,7 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 			challengeError, ok := errors.Unwrap(err).(*AuthChallengeError)
 			if ok {
 				// Check our provider for access
-				access, err := r.provider.GetAccess(challengeError)
+				access, err := r.provider.GetAccess(ctx, challengeError)
 				if err != nil {
 					resp.Body.Close()
 					return nil, err

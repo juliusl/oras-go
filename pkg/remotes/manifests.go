@@ -14,7 +14,10 @@ type manifests struct {
 
 // getDescriptor tries to resolve the reference to a descriptor using the headers
 func (m manifests) getDescriptor(ctx context.Context, doer Doer) (ocispec.Descriptor, error) {
-	request, err := endpoints.e3HEAD.prepare()(ctx, m.ref.add.host, m.ref.add.ns, m.ref.add.loc)
+	request, err := endpoints.e3HEAD.prepare()(ctx,
+		m.ref.add.host,
+		m.ref.add.ns,
+		m.ref.add.loc)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}

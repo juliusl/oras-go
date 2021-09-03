@@ -19,6 +19,39 @@ type AuthChallengeError struct {
 	error
 }
 
+// Challenge header examples...
+// Www-Authenticate: Bearer realm="https://example.azurecr.io/oauth2/token",service="example.azurecr.io"
+// Www-Authenticate: Bearer realm="https://example.azurecr.io/oauth2/token",service="example.azurecr.io",scope="repository:ubuntu:pull"
+// Www-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:samalba/my-app:pull,push"
+
+// Parsing headers to format requests to OAuth2Providers
+var parseBearerChallengeHeader = regexp.MustCompile(`Www-Authenticate:.Bearer.realm="(.*)",service="(.*)"`)
+var parseBearerChallengeHeaderWithScope = regexp.MustCompile(`Www-Authenticate:.Bearer.realm="(.*)",service="(.*)",scope="(.*)`)
+var parseNamespaceFromScope = regexp.MustCompile(`repository:(.*):`)
+
+func (a AuthChallengeError) ParseChallenge() (realm, service, scope, namespace string, err error) {
+	results := parseBearerChallengeHeaderWithScope.FindAllStringSubmatch(a.challenge, -1)
+	if len(results) <= 0 {
+		results = parseBearerChallengeHeader.FindAllStringSubmatch(a.challenge, -1)
+		if len(results) <= 0 {
+			return "", "", "", "", fmt.Errorf("invalid challenge")
+		}
+	}
+
+	realm = results[0][1]
+	service = results[0][2]
+	if len(results[0]) > 3 {
+		scope = results[0][3]
+
+		results = parseNamespaceFromScope.FindAllStringSubmatch(scope, -1)
+		if len(results) > 0 {
+			namespace = results[0][1]
+		}
+	}
+
+	return realm, service, scope, namespace, nil
+}
+
 func NewRedirectError(req *http.Request) *RedirectError {
 	return &RedirectError{retry: req}
 }
