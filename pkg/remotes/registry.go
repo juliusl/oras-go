@@ -178,7 +178,7 @@ type reference struct {
 }
 
 // ping ensures that the registry is alive and a registry
-func (r *Registry) ping(ctx context.Context, scope string) error {
+func (r *Registry) ping(ctx context.Context) error {
 	if r == nil {
 		return fmt.Errorf("reference is nil")
 	}
@@ -209,7 +209,7 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	}
 
 	// ensure the registry is running
-	err = r.ping(ctx, "")
+	err = r.ping(ctx)
 	if err != nil {
 		return "", ocispec.Descriptor{}, err
 	}
@@ -269,7 +269,7 @@ func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadC
 	}
 
 	// ensure the registry is running
-	err := r.ping(ctx, "pull")
+	err := r.ping(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +293,7 @@ func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifa
 	}
 
 	// ensure the registry is running
-	err := r.ping(ctx, "pull")
+	err := r.ping(ctx)
 	if err != nil {
 		return nil, err
 	}
