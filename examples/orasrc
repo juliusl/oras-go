@@ -1,188 +1,234 @@
 #!/bin/sh
+# shellcheck disable=SC3043
 
-## Example access provider script - 
-## The shell access provider must implement 3 commands 
-## status - looks up the access status for the given host and optionally username 
-## challenge - given a realm service and scope, challenge will authenticate and return the access token 
+## Example access provider script -
+## The shell access provider must implement 3 commands
+## status - looks up the access status for the given host and optionally username
+## challenge - given a realm service and scope, challenge will authenticate and return the access token
 ## revoke - revokes access for the given host and optionally username
 
 command=$1
 
-case "$command"
-in
-  #
-	# Challenge command
-	# usage: script-name challenge realm service scope
-	# realm - TODO
-	# service - TODO
-	# scope - TODO
-	#
-	challenge ) shift;
-	if [ ! "$#" -eq 3 ]; then 
+# Parameters
+realm=:
+service=:
+scope=:
+host=:
+username=:
+
+# Authenticate takes a challenge file and authenticates the user, On the second line of the challenge file are identifiers 
+# that can be used as keys to the actual data
+Authenticate() {
+	local challengeFile=$1
+	if [ -z "$challengeFile" ];
+	then 
+		exit 1
+	fi
+	sleep 2s
+	return 0
+}
+
+# Check should check the status of each active line
+Check() {
+	local st="$1"
+	# Gets all the inner line
+	table=$(echo "$st" | awk '{ if (NR > 2 && NF > 2) { print $0 } }')
+	echo "$table"
+	if [ -z "$table" ];
+	then
+		return 1
+	fi
+
+	sleep 2s
+	return 0
+}
+
+case "$command" in
+#
+# Challenge command
+# usage: script-name challenge realm service scope
+# realm - TODO
+# service - TODO
+# scope - TODO
+#
+challenge)
+	shift
+	if [ ! "$#" -eq 3 ]; then
 		echo "usage: script-name challenge realm service scope"
 		exit 1
 	fi
-	for i in 1 2 3
-		do case $i
-		in
-			1) realm=$1;;
-			2) service=$2;;
-			3) scope=$3;;
+	for i in 1 2 3; do
+		case $i in
+		1) realm=$1 ;;
+		2) service=$2 ;;
+		3) scope=$3 ;;
 		esac
 	done
 	alias challenge=_challenge
-	break;;
-	#
-	# Revoke command
-	# usage: script-name revoke host username:(optional)
-	# host - TODO
-	# username - TODO
-	#
-	revoke ) shift;
-	if [ ! "$#" -gt 0 ]; then 
+	;;
+#
+# Revoke command
+# usage: script-name revoke host username:(optional)
+# host - TODO
+# username - TODO
+#
+revoke)
+	shift
+	if [ ! "$#" -gt 0 ]; then
 		echo "usage: script-name revoke host username:(optional)"
 		exit 1
 	fi
-	for i in 1 2
-		do case $i
-		in
-		  1) host=$1;;
-		  2) username=$2;;
+	for i in 1 2; do
+		case $i in
+		1) host=$1 ;;
+		2) username=$2 ;;
 		esac
 	done
 	alias revoke=_revoke
-	break;;
+	;;
 	#
 	# Status command
-  # usage: script-name status host username:(optional)
-	# host - TODO
-	# username - TODO
-	#
-	status ) shift;
-	if [ ! "$#" -gt 0 ]; then 
+	# usage: script-name status host username:(optional)
+# host - TODO
+# username - TODO
+#
+status)
+	shift
+	if [ ! "$#" -gt 0 ]; then
 		echo "usage: script-name status host username:(optional)"
 		exit 1
 	fi
-	for i in 1 2
-		do case $i
-		in
-		  1) host=$1;;
-		  2) username=$2;;
+	for i in 1 2; do
+		case $i in
+		1) host=$1 ;;
+		2) username=$2 ;;
 		esac
 	done
 	alias status=_status
-	break;;
-	* )
+	;;
+*)
 	echo "TODO Write help"
 	exit 0
+	;;
 esac
 
 set -f nologs
-set -- 
+set --
 
 _challenge() {
-	# Example shell protocol 
+	# Example shell protocol
 	# Since this can be called from multiple instances, create a temp file to track our status
 	# (The $$ gets the current id which must be unique)
-	local challengeWork="$0.$service.$$.temp.json"
+	local challengeWork="$0.$service.$$.temp"
 	# the result will be appended to the access file
 	local access="$0.$service.access"
 
 	# Checking status
-	if [ -f $access ] && [ -s $access ]; then
-		_access $access $service $scope
-		if [ $? -eq 0 ]; then
+	if [ -f "$access" ] && [ -s "$access" ]; then
+		if _access "$access" "$service" "$scope"; then
 			exit 0
 		fi
-	fi 
+	fi
 
-	# Create the working file
-	: > $challengeWork
-	
-	# Ensures clean up of temp file
+	# Setup temp working file 
+	: >"$challengeWork"
+	# shellcheck disable=SC2064
 	trap "rm -f $challengeWork" INT HUP EXIT
+
+	# Write the current challenge
+	cat <<-EOF >>"$challengeWork"
+		$realm $service $scope user.$$ token.$$
+	EOF
+
+	# Make readonly
+	chmod +rx "$challengeWork"
+
+	# Do the authentication 
+	if eval "$(Authenticate "$challengeWork")" > /dev/null; then 
+		# Save it to the access file, it's okay to have duplicates
+		cat "$challengeWork" >> "$access"
+		cat "$challengeWork"
+		exit 0
+	fi
 	
-	cat <<- EOF >> $challengeWork
-	{ "realm": "$realm", "service": "$service", "scope": "$scope" }
-	EOF
-
-	accessToken="access_token"
-	cat <<- EOF > $challengeWork
-		$(cat $challengeWork)
-		{ "username" : "user.$$", "access_token": "$accessToken.$$" }
-	EOF
-
-	# Send this info to whatever is authenticating
-
-	# Save it to the access file, it's okay to have duplicates
-	cat $challengeWork >> $access
-	cat $challengeWork
+	echo "Failed to authenticate"
+	exit 1
 }
 
 _revoke() {
 	local access="$0.$host.access"
-	if [ ! -f $access ]; then
+	if [ ! -f "$access" ]; then
 		echo "Anonymous"
 		exit 1
 	fi
-
-	: > $access
+	# TODO grep for the username
+	: >"$access"
 	exit 0
 }
 
-_status() {	
+_status() {
 	local access="$0.$host.access"
-	if [ ! -f $access ] || [ ! -s $access ]; then
+	if [ ! -f "$access" ] || [ ! -s "$access" ]; then
 		echo "Anonymous"
 		exit 1
 	fi
 
-	sort $access | uniq -c | grep $host > /dev/null
-	if [ "$?" -eq 0 ]; then
-		_access $access $host
+	if sort "$access" | uniq -c | grep "$host.*$username" > /dev/null; then
+		_access "$access" "$host" '*' "$username"
 		exit $?
-	fi 
+	fi
 }
 
 _access() {
-		local a=$1
-		local h=$2
-		local s=$3
-		s=${s:-*}
-		local IFS='
-		'
-		# TODO Make this greedier
-		current=$(cat $a | grep -n -E "\"service\":.\"$h\".*\"scope\":.*$s.*" | awk -F ':' '{print $1}')
-		# echo $current
-		if [ ! -z "$current" ]; then 
-			set $current 
-			for arg
-			do
-				sed -n "${arg},$((arg+1))p" $a
-				exit $?
-			done
-		fi
-		return 1
+	local a=$1
+	local h=$2
+	local s=$3
+	s=${s:-*}
+	local u=$4
+	u=${u:-?}
+	local at=$5
+	at=${at:-?+}
+	# TODO Make this greedier
+	current=$(grep -n -E "^.+$h.$s.$u.$at$" "$a" | awk '
+		BEGIN{
+			printf "line\thost\t\tscope\t\t\t\tuserkey\t\taccesstokenkey\n"
+			printf "____\t____\t\t_____\t\t\t\t_______\t\t______________\n"
+		}
+		{
+			fieldsep=":"
+			n=split($1, array, fieldsep)
+			printf "%d\t%s\t%s\t%s\t%s\n", array[1], $2, $3, $4, $5
+		}
+		END{
+			if (NR>1)
+				print NR,"tokens"
+			else
+				print NR,"token"
+			end
+		}')
+	
+	if [ -n "$current" ]; then
+		Check "$current"
+		return $?
+	fi
+
+	return 1
 }
 
-main () { 
-	for cmd in challenge revoke status 
-	do
-		# Find the first cmd that has an active alias
-		# execute the alias
-		type $cmd > /dev/null
-		if [ "$?" -eq 0 ]; then 
-			case "$cmd"
+main() {
+	for cmd in challenge revoke status; do
+		if type $cmd > /dev/null; then
+			case "$cmd" 
 			in
-				challenge ) challenge;;
-				revoke )    revoke;;
-				status )    status;;
-				* ) exit 1;
+			challenge) challenge ;;
+			revoke) revoke ;;
+			status) status ;;
+			*) exit 1 ;;
 			esac
-		break;
+			break
 		fi
 	done
 }
 
-main 
+main
 exit 0
