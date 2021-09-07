@@ -6,8 +6,8 @@ import (
 	"oras.land/oras-go/pkg/remotes/shell"
 )
 
-func Logout(ctx context.Context, hostname string) error {
-	ap, err := shell.ConfigureAccessProvider(".orasrc")
+func (s *ShellLogin) Logout(ctx context.Context, hostname string) error {
+	ap, err := shell.ConfigureAccessProvider(s.rcPath)
 	if err != nil {
 		return err
 	}

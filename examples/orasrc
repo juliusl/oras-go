@@ -47,7 +47,7 @@ in
 		do case $i
 		in
 		  1) host=$1;;
-			2) username=$2;;
+		  2) username=$2;;
 		esac
 	done
 	alias revoke=_revoke
@@ -67,12 +67,12 @@ in
 		do case $i
 		in
 		  1) host=$1;;
-			2) username=$2;;
+		  2) username=$2;;
 		esac
 	done
 	alias status=_status
 	break;;
-	* ) 
+	* )
 	echo "TODO Write help"
 	exit 0
 esac
@@ -96,6 +96,7 @@ _challenge() {
 		fi
 	fi 
 
+	# Create the working file
 	: > $challengeWork
 	
 	# Ensures clean up of temp file
@@ -174,8 +175,8 @@ main () {
 			case "$cmd"
 			in
 				challenge ) challenge;;
-				revoke ) revoke;;
-				status ) status;;
+				revoke )    revoke;;
+				status )    status;;
 				* ) exit 1;
 			esac
 		break;
