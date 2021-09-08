@@ -6,7 +6,6 @@ import (
 	"os/exec"
 
 	"oras.land/oras-go/pkg/remotes"
-	"oras.land/oras-go/pkg/remotes/oauth"
 )
 
 func ConfigureAccessProvider(path string) (remotes.AccessProvider, error) {
@@ -46,7 +45,7 @@ func (s *accessProvider) RevokeAccess(ctx context.Context, host, username string
 		return nil, err
 	}
 
-	st := &remotes.AccessStatus{} // TODO: Could cache this
+	st := &remotes.AccessStatus{}
 	err = json.Unmarshal(out, st)
 	if err != nil {
 		return nil, err
@@ -61,17 +60,23 @@ func (s *accessProvider) GetAccess(ctx context.Context, challenge *remotes.AuthC
 		return nil, err
 	}
 
-	access := exec.Command(s.path, "challenge", realm, service, scope)
+	status := exec.Command(s.path, "challenge", realm, service, scope)
 
-	out, err := access.Output()
+	out, err := status.Output()
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO
-	accessToken := string(out)
+	st := &remotes.AccessStatus{}
+	err = json.Unmarshal(out, st)
+	if err != nil {
+		return nil, err
+	}
 
-	ts := oauth.NewBasicAuthTokenSource(ctx, ns, "", accessToken, scope)
+	a, err := remotes.FromDirectory(ctx, st.AccessProviderDir, ns, scope, st.UserKey, st.TokenKey)
+	if err != nil {
+		return nil, err
+	}
 
-	return oauth.NewTokenSourceAccess(ts), nil
+	return a, nil
 }
