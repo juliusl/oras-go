@@ -7,15 +7,15 @@ import (
 )
 
 func (s *ShellLogin) Logout(ctx context.Context, hostname string) error {
-	ap, err := remotessh.ConfigureAccessProvider(s.rcPath)
+	ap, err := remotessh.ConfigureAccessProvider(s.loginDir)
 	if err != nil {
 		return err
 	}
 
-	st, err := ap.RevokeAccess(ctx, hostname, "")
+	_, err = ap.RevokeAccess(ctx, hostname, "")
 	if err != nil {
 		return err
 	}
 
-	return st.Error
+	return nil
 }

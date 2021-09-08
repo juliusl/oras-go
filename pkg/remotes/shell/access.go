@@ -73,7 +73,7 @@ func (s *accessProvider) GetAccess(ctx context.Context, challenge *remotes.AuthC
 		return nil, err
 	}
 
-	a, err := remotes.FromDirectory(ctx, st.AccessProviderDir, ns, scope, st.UserKey, st.TokenKey)
+	a, err := FromDirectory(ctx, st.AccessProviderDir, ns, scope, st.UserKey, st.TokenKey)
 	if err != nil {
 		return nil, err
 	}
