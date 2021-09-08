@@ -19,6 +19,7 @@ type (
 	}
 
 	AccessStatus struct {
-		Error error
+		Error             error
+		AccessProviderDir string
 	}
 )

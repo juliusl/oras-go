@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"oras-go/pkg/content"
 	"strings"
+
+	"oras.land/oras-go/pkg/content"
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"

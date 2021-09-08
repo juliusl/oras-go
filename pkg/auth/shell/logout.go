@@ -3,11 +3,11 @@ package shell
 import (
 	"context"
 
-	"oras.land/oras-go/pkg/remotes/shell"
+	remotessh "oras.land/oras-go/pkg/remotes/shell"
 )
 
 func (s *ShellLogin) Logout(ctx context.Context, hostname string) error {
-	ap, err := shell.ConfigureAccessProvider(s.rcPath)
+	ap, err := remotessh.ConfigureAccessProvider(s.rcPath)
 	if err != nil {
 		return err
 	}
