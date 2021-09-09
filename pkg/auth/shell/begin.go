@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 
 	"oras.land/oras-go/pkg/content"
 )
@@ -50,8 +51,12 @@ func Begin() (*content.OCIStore, *ShellLogin, error) {
 
 // environment - processes directories from env variables
 func environment() (storeDir, loginDir string, err error) {
-	storeDir = os.Getenv("ORAS_STORE_DIR")
-	loginDir = os.Getenv("ORAS_LOGIN_DIR")
+	envbegin := os.Getenv("ORAS_BEGIN_ENV")
+	envnamespace := os.Getenv("ORAS_NAMESPACE")
+	root := path.Join(envbegin, envnamespace)
+
+	storeDir = path.Join(root, "store")
+	loginDir = path.Join(root, "login")
 
 	err = validate(storeDir)
 	if err != nil {

@@ -1,6 +1,10 @@
 package shell
 
 import (
+	"errors"
+	"os"
+	"path"
+
 	"oras.land/oras-go/pkg/auth"
 	remotessh "oras.land/oras-go/pkg/remotes/shell"
 )
@@ -33,7 +37,7 @@ func (s *ShellLogin) LoginWithOpts(options ...auth.LoginOption) error {
 		return err
 	}
 
-	s.AccessProviderDir = status.AccessProviderDir
+	s.AccessProviderDir = status.AccessRoot
 
 	return nil
 }

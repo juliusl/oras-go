@@ -19,8 +19,8 @@ type (
 	}
 
 	AccessStatus struct {
-		AccessProviderDir string
-		UserKey           string
-		TokenKey          string
+		AccessRoot string
+		UserKey    string
+		TokenKey   string
 	}
 )

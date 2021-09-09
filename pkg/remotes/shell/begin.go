@@ -13,7 +13,7 @@ import (
 
 func FromDirectory(ctx context.Context, accessDirectory, namespace, scopes, userkey, tokenkey string) (remotes.Access, error) {
 	// TODO document tokens interface
-	tokenssh := path.Join(accessDirectory, namespace, "tokens")
+	tokenssh := path.Join(accessDirectory, "accessrc")
 	if tokenssh == "" {
 		return nil, errors.New("remotes: could not create path for tokens interface")
 	}
