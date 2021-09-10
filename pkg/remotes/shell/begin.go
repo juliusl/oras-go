@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
+	"golang.org/x/oauth2"
 	"oras.land/oras-go/pkg/remotes"
 	"oras.land/oras-go/pkg/remotes/oauth"
 )
@@ -38,7 +40,7 @@ func FromDirectory(ctx context.Context, accessDirectory, service, namespace, sco
 	user := string(out[:len(out)-1])
 
 	// Once the real username is resolved, lookup the resolved token
-	c = exec.Command(tokenssh, "get-access-token", service, scopes, user, tokenkey)
+	c = exec.Command(tokenssh, "get-access-token", service, user, tokenkey, scopes)
 	if c == nil {
 		return nil, errors.New("could not create command")
 	}
@@ -49,6 +51,6 @@ func FromDirectory(ctx context.Context, accessDirectory, service, namespace, sco
 	}
 
 	token := string(out)
-	ts := oauth.NewBasicAuthTokenSource(ctx, namespace, user, token, scopes)
-	return oauth.NewTokenSourceAccess(ts), nil
+	token = strings.Trim(token, "\t \n")
+	return oauth.NewTokenSourceAccess(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})), nil
 }

@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
 	"oras.land/oras-go/pkg/remotes"
 )
@@ -29,7 +29,7 @@ type accessProvider struct {
 
 const anonymous = "Anonymous\n"
 
-func (s *accessProvider) CheckAccess(ctx context.Context, host, username string) (*remotes.AccessStatus, error) {
+func (s *accessProvider) CheckAccess(ctx context.Context, host, image, username string) (*remotes.AccessStatus, error) {
 	status := exec.Command(s.loginrc, "status", host, username)
 
 	out, err := status.CombinedOutput()
@@ -52,6 +52,7 @@ func (s *accessProvider) CheckAccess(ctx context.Context, host, username string)
 			return nil, errors.New("missing access root")
 		}
 		return &remotes.AccessStatus{
+			Image:      image,
 			AccessRoot: accessroot,
 		}, nil
 	}
@@ -89,13 +90,13 @@ func (s *accessProvider) GetAccess(ctx context.Context, challenge *remotes.AuthC
 	}
 
 	status := exec.Command(s.loginrc, "challenge", realm, service, scope)
-
 	_, err = status.CombinedOutput()
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := ioutil.ReadFile(fmt.Sprintf("%s.status.json", service))
+	statusJSON := path.Join(path.Dir(s.loginrc), service, strings.Replace(scope, ":", "/", -1), "status.json")
+	f, err := ioutil.ReadFile(statusJSON)
 	if err != nil {
 		return nil, err
 	}

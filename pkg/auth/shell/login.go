@@ -5,15 +5,17 @@ import (
 	remotessh "oras.land/oras-go/pkg/remotes/shell"
 )
 
-func NewLogin(loginDir string) *ShellLogin {
+func NewLogin(image, loginDir string) *ShellLogin {
 	return &ShellLogin{
 		LoginDir: loginDir,
+		Image:    image,
 	}
 }
 
 type ShellLogin struct {
 	LoginDir          string
 	AccessProviderDir string
+	Image             string
 }
 
 func (s *ShellLogin) LoginWithOpts(options ...auth.LoginOption) error {
@@ -28,7 +30,7 @@ func (s *ShellLogin) LoginWithOpts(options ...auth.LoginOption) error {
 	}
 
 	ctx := settings.Context
-	status, err := ap.CheckAccess(ctx, settings.Hostname, settings.Username)
+	status, err := ap.CheckAccess(ctx, settings.Hostname, s.Image, settings.Username)
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,7 @@ import (
 	"oras.land/oras-go/pkg/content"
 )
 
-func Begin() (*content.OCIStore, *ShellLogin, error) {
+func Begin(image string) (*content.OCIStore, *ShellLogin, error) {
 	var (
 		storeDir, loginDir string
 		err                error
@@ -41,7 +41,7 @@ func Begin() (*content.OCIStore, *ShellLogin, error) {
 		return nil, nil, Err.CouldNotLoadStoreIndex
 	}
 
-	sh := NewLogin(loginDir)
+	sh := NewLogin(image, loginDir)
 	if sh == nil {
 		return nil, nil, Err.CouldNotCreateAuthLogin
 	}

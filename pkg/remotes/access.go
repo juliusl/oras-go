@@ -7,7 +7,7 @@ import (
 
 type (
 	AccessProvider interface {
-		CheckAccess(ctx context.Context, host, username string) (*AccessStatus, error)
+		CheckAccess(ctx context.Context, host, image, username string) (*AccessStatus, error)
 
 		RevokeAccess(ctx context.Context, host, username string) (*AccessStatus, error)
 
@@ -19,6 +19,7 @@ type (
 	}
 
 	AccessStatus struct {
+		Image      string
 		AccessRoot string
 		UserKey    string
 		TokenKey   string

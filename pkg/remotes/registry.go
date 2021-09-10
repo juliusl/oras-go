@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"oras.land/oras-go/pkg/content"
@@ -50,6 +51,21 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 
 	resp, err := r.do(req)
 	if err != nil {
+		// This comes from the redirect handler
+		ne, ok := err.(*url.Error)
+		if ok {
+			re, ok := ne.Err.(*RedirectError)
+			if ok {
+				resp, err := re.Retry(r.Client)
+				if err != nil {
+					resp.Body.Close()
+					return nil, err
+				}
+
+				return resp, nil
+			}
+		}
+
 		if errors.Is(err, RedirectError{}) {
 			redirectErr, ok := errors.Unwrap(err).(*RedirectError)
 			if ok {
@@ -87,7 +103,7 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 
 				r.setClient(c)
 
-				resp, err = r.do(req)
+				resp, err = c.Do(req)
 				if err != nil {
 					return nil, err
 				}
@@ -96,7 +112,6 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 			}
 		}
 
-		resp.Body.Close()
 		return nil, err
 	}
 
@@ -105,8 +120,7 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 
 func (r *Registry) setClient(client *http.Client) {
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) > 0 &&
-			req.URL.Host != via[0].Host &&
+		if len(via) > 0 && req.URL.Host != via[0].Host &&
 			req.Header.Get("Authorization") == via[0].Header.Get("Authorization") {
 			req.Header.Del("Authorization")
 			return NewRedirectError(req)
@@ -214,11 +228,11 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 		return "", ocispec.Descriptor{}, fmt.Errorf("registry is nil")
 	}
 
-	// ensure the registry is running
-	err = r.ping(ctx)
-	if err != nil {
-		return "", ocispec.Descriptor{}, err
-	}
+	// // ensure the registry is running
+	// err = r.ping(ctx)
+	// if err != nil {
+	// 	return "", ocispec.Descriptor{}, err
+	// }
 
 	host, ns, loc, err := Parse(ref)
 	if err != nil {
@@ -248,13 +262,13 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 
 	// Return early if we can get the manifest early
 	desc, err = m.getDescriptor(ctx, r)
-	if err == nil && desc.Digest != "" {
-		manifestRef.digst = desc.Digest
-		manifestRef.media = desc.MediaType
-		r.descriptors[manifestRef] = &desc
+	// if err == nil && desc.Digest != "" {
+	// 	// manifestRef.digst = desc.Digest
+	// 	// manifestRef.media = desc.MediaType
+	// 	// r.descriptors[manifestRef] = &desc
 
-		return ref, desc, nil
-	}
+	// 	// return ref, desc, nil
+	// }
 
 	// Get the manifest to retrieve the desc
 	manifest, err := m.getDescriptorWithManifest(ctx, r)
@@ -275,12 +289,12 @@ func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadC
 	}
 
 	// ensure the registry is running
-	err := r.ping(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// err := r.ping(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	return blob{
+	b := blob{
 		ref: reference{
 			add: address{
 				host: r.host,
@@ -290,7 +304,9 @@ func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadC
 			digst: desc.Digest,
 			media: desc.MediaType,
 		},
-	}.fetch(ctx, r)
+	}
+
+	return b.fetch(ctx, r)
 }
 
 func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error) {
@@ -299,10 +315,10 @@ func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifa
 	}
 
 	// ensure the registry is running
-	err := r.ping(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// err := r.ping(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	return artifacts{
 		artifactType: artifactType,
