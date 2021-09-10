@@ -111,6 +111,14 @@ func Parse(reference string) (string, string, string, error) {
 	}
 
 	host := matches[0]
+
+	if strings.HasPrefix(strings.ToLower(matches[len(matches)-2]), "sha") {
+		namespace := strings.Join(matches[1:len(matches)-2], "/")
+		ref := strings.Join(matches[len(matches)-2:], ":")
+
+		return host, namespace, ref, nil
+	}
+
 	namespace := strings.Join(matches[1:len(matches)-1], "/")
 	ref := matches[len(matches)-1]
 

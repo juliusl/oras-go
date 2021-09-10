@@ -2,11 +2,13 @@ package remotes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"oras.land/oras-go/pkg/content"
@@ -144,6 +146,8 @@ func (r *Registry) do(req *http.Request) (*http.Response, error) {
 				// TODO not sure what the delimitter would be
 				return nil, NewAuthChallengeError(strings.Join(c, ","))
 			}
+
+			return nil, fmt.Errorf("not authenticated")
 		}
 
 		defer resp.Body.Close()
@@ -197,31 +201,6 @@ type reference struct {
 	digst digest.Digest
 }
 
-// ping ensures that the registry is alive and a registry
-func (r *Registry) ping(ctx context.Context) error {
-	if r == nil {
-		return fmt.Errorf("reference is nil")
-	}
-
-	request, err := endpoints.e1.prepare()(ctx, r.host, r.namespace, "")
-	if err != nil {
-		return err
-	}
-
-	resp, err := r.Do(ctx, request)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("non successful error code %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
 // resolve resolves a reference to a descriptor
 func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
 	if r == nil {
@@ -261,13 +240,15 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	m := manifests{ref: manifestRef}
 
 	// Return early if we can get the manifest early
-	desc, err = m.getDescriptor(ctx, r)
+	// desc, err = m.getDescriptor(ctx, r)
 	// if err == nil && desc.Digest != "" {
-	// 	// manifestRef.digst = desc.Digest
-	// 	// manifestRef.media = desc.MediaType
-	// 	// r.descriptors[manifestRef] = &desc
+	// 	manifestRef.digst = desc.Digest
+	// 	manifestRef.media = desc.MediaType
+	// 	r.descriptors[manifestRef] = &desc
 
-	// 	// return ref, desc, nil
+	// 	return ref, desc, nil
+	// } else if err != nil {
+	// 	return "", ocispec.Descriptor{}, err
 	// }
 
 	// Get the manifest to retrieve the desc
@@ -275,6 +256,8 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	if err != nil {
 		return "", ocispec.Descriptor{}, err
 	}
+
+	json.NewEncoder(os.Stdout).Encode(manifest)
 
 	manifestRef.digst = desc.Digest
 	r.descriptors[manifestRef] = &manifest.Config
