@@ -68,8 +68,8 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 			}
 		}
 
-		if errors.Is(err, AuthChallengeError{}) {
-			challengeError, ok := errors.Unwrap(err).(*AuthChallengeError)
+		if errors.Is(err, AuthChallengeErr) {
+			challengeError, ok := err.(*AuthChallengeError)
 			if ok {
 				// Check our provider for access
 				access, err := r.provider.GetAccess(ctx, challengeError)
@@ -87,7 +87,12 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 
 				r.setClient(c)
 
-				return r.Do(ctx, req)
+				resp, err = r.do(req)
+				if err != nil {
+					return nil, err
+				}
+
+				return resp, nil
 			}
 		}
 

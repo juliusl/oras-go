@@ -1,22 +1,18 @@
 package shell
 
 import (
-	"errors"
-	"os"
-	"path"
-
 	"oras.land/oras-go/pkg/auth"
 	remotessh "oras.land/oras-go/pkg/remotes/shell"
 )
 
 func NewLogin(loginDir string) *ShellLogin {
 	return &ShellLogin{
-		loginDir: loginDir,
+		LoginDir: loginDir,
 	}
 }
 
 type ShellLogin struct {
-	loginDir          string
+	LoginDir          string
 	AccessProviderDir string
 }
 
@@ -26,7 +22,7 @@ func (s *ShellLogin) LoginWithOpts(options ...auth.LoginOption) error {
 		option(settings)
 	}
 
-	ap, err := remotessh.ConfigureAccessProvider(s.loginDir)
+	ap, err := remotessh.ConfigureAccessProvider(s.LoginDir, s.AccessProviderDir)
 	if err != nil {
 		return err
 	}

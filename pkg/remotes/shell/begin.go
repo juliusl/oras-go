@@ -11,7 +11,7 @@ import (
 	"oras.land/oras-go/pkg/remotes/oauth"
 )
 
-func FromDirectory(ctx context.Context, accessDirectory, namespace, scopes, userkey, tokenkey string) (remotes.Access, error) {
+func FromDirectory(ctx context.Context, accessDirectory, service, namespace, scopes, userkey, tokenkey string) (remotes.Access, error) {
 	// TODO document tokens interface
 	tokenssh := path.Join(accessDirectory, "accessrc")
 	if tokenssh == "" {
@@ -30,20 +30,20 @@ func FromDirectory(ctx context.Context, accessDirectory, namespace, scopes, user
 		return nil, errors.New("could not create command")
 	}
 
-	out, err := c.Output()
+	out, err := c.CombinedOutput()
 	if err != nil {
 		return nil, err
 	}
 
-	user := string(out)
+	user := string(out[:len(out)-1])
 
 	// Once the real username is resolved, lookup the resolved token
-	c = exec.Command(tokenssh, "get-access-token", user, tokenkey)
+	c = exec.Command(tokenssh, "get-access-token", service, scopes, user, tokenkey)
 	if c == nil {
 		return nil, errors.New("could not create command")
 	}
 
-	out, err = c.Output()
+	out, err = c.CombinedOutput()
 	if err != nil {
 		return nil, err
 	}

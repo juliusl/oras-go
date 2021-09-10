@@ -2,6 +2,7 @@ package remotes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,10 +14,20 @@ func NewAuthChallengeError(challenge string) *AuthChallengeError {
 	return &AuthChallengeError{challenge: challenge}
 }
 
+var AuthChallengeErr = errors.New("auth-challenge")
+
 // AuthChallengeError is an opaque type returned when encountering a 401 Unauthorized from the registry
 type AuthChallengeError struct {
 	challenge string
 	error
+}
+
+func (a AuthChallengeError) Is(target error) bool {
+	return target == AuthChallengeErr
+}
+
+func (a AuthChallengeError) Unwrap() error {
+	return errors.New("auth-challenge")
 }
 
 // Challenge header examples...
@@ -25,8 +36,8 @@ type AuthChallengeError struct {
 // Www-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:samalba/my-app:pull,push"
 
 // Parsing headers to format requests to OAuth2Providers
-var parseBearerChallengeHeader = regexp.MustCompile(`Www-Authenticate:.Bearer.realm="(.*)",service="(.*)"`)
-var parseBearerChallengeHeaderWithScope = regexp.MustCompile(`Www-Authenticate:.Bearer.realm="(.*)",service="(.*)",scope="(.*)`)
+var parseBearerChallengeHeader = regexp.MustCompile(`Bearer.realm="(.*)",service="(.*)"`)
+var parseBearerChallengeHeaderWithScope = regexp.MustCompile(`Bearer.realm="(.*)",service="(.*)",scope="(.*)`)
 var parseNamespaceFromScope = regexp.MustCompile(`repository:(.*):`)
 
 func (a AuthChallengeError) ParseChallenge() (realm, service, scope, namespace string, err error) {

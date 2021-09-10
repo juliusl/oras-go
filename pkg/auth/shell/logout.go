@@ -7,7 +7,7 @@ import (
 )
 
 func (s *ShellLogin) Logout(ctx context.Context, hostname string) error {
-	ap, err := remotessh.ConfigureAccessProvider(s.loginDir)
+	ap, err := remotessh.ConfigureAccessProvider(s.LoginDir, s.AccessProviderDir)
 	if err != nil {
 		return err
 	}
