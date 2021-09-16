@@ -1,4 +1,4 @@
-module oras-go
+module oras.land/oras-go
 
 go 1.16
 
@@ -28,5 +28,4 @@ require (
 	golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	oras.land/oras-go v0.0.0-00010101000000-000000000000
 )
