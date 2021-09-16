@@ -5,15 +5,32 @@ import (
 	"errors"
 	"oras-go/pkg/remotes"
 	"oras-go/pkg/remotes/oauth"
+
+	"oras.land/oras-go/pkg/auth"
 )
 
-func NewRegistryWithAccessProvider(host, namespace string, client *Client) (*remotes.Registry, error) {
-	if len(client.configs) == 0 {
+func NewRegistryWithAccessProvider(host, namespace string, configPaths []string, options ...auth.LoginOption) (*remotes.Registry, error) {
+	cl, err := NewClient(configPaths...)
+	if err != nil {
+		return nil, err
+	}
+
+	dcl, ok := cl.(*Client)
+	if !ok {
+		return nil, errors.New("invalid client type")
+	}
+
+	if len(dcl.configs) == 0 {
 		return nil, errors.New("client is not logged in, it cannot provide access")
 	}
 
+	err = dcl.LoginWithOpts(options...)
+	if err != nil {
+		return nil, err
+	}
+
 	ap := &dockerAccessProvider{
-		client: client,
+		client: dcl,
 	}
 
 	return remotes.NewRegistry(host, namespace, ap), nil
