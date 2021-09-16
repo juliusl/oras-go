@@ -1,12 +1,12 @@
 package remotes
 
 import (
-	"github.com/containerd/containerd/remotes"
+	ctrRemotes "github.com/containerd/containerd/remotes"
 )
 
 // Ensure the interfaces still match
 var (
-	_ remotes.Resolver = (*resolver)(nil)
-	_ remotes.Fetcher  = (*resolver)(nil)
-	_ remotes.Pusher   = (*resolver)(nil)
+	_ ctrRemotes.Resolver = (*resolver)(nil)
+	_ ctrRemotes.Fetcher  = (*resolver)(nil)
+	_ ctrRemotes.Pusher   = (*resolver)(nil)
 )

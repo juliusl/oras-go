@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/remotes"
+	ctrRemotes "github.com/containerd/containerd/remotes"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	orasRemotes "oras.land/oras-go/pkg/remotes"
 )
@@ -13,16 +13,21 @@ import (
 type resolver struct {
 	ref        string
 	desc       ocispec.Descriptor
-	fetcher    remotes.FetcherFunc
-	pusher     remotes.PusherFunc
+	fetcher    ctrRemotes.FetcherFunc
+	pusher     ctrRemotes.PusherFunc
 	resolver   ResolverFunc
 	discoverer orasRemotes.DiscoverFunc
 }
 
-func containerdPusher(registryFuncs *orasRemotes.RegistryFunctions) remotes.PusherFunc {
+func containerdPusher(registryFuncs *orasRemotes.RegistryFunctions, opts ...content.WriterOpt) ctrRemotes.PusherFunc {
 	return func(ctx context.Context, desc ocispec.Descriptor) (content.Writer, error) {
 
-		writer, err := registryFuncs.Pusher()(ctx, desc)
+		store, err := registryFuncs.Pusher()(ctx, desc)
+		if err != nil {
+			return nil, err
+		}
+
+		writer, err := store.Writer(ctx, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -32,7 +37,7 @@ func containerdPusher(registryFuncs *orasRemotes.RegistryFunctions) remotes.Push
 }
 
 // Resolve creates a resolver that can resolve, fetch, and discover
-func DiscoverFetch(ctx context.Context, fetcher remotes.FetcherFunc, resolverfunc ResolverFunc, discoverer orasRemotes.DiscoverFunc, reference string) (remotes.Resolver, error) {
+func DiscoverFetch(ctx context.Context, fetcher ctrRemotes.FetcherFunc, resolverfunc ResolverFunc, discoverer orasRemotes.DiscoverFunc, reference string) (ctrRemotes.Resolver, error) {
 	_, err := orasRemotes.ValidateReference(reference)
 	if err == nil {
 		return resolver{
@@ -47,7 +52,7 @@ func DiscoverFetch(ctx context.Context, fetcher remotes.FetcherFunc, resolverfun
 }
 
 // PushPull creates a resolver that can do everything above and also push to the registry as well
-func PushPull(ctx context.Context, fetcher remotes.FetcherFunc, pusher remotes.PusherFunc, resolverfunc ResolverFunc, discoverer orasRemotes.DiscoverFunc, desc ocispec.Descriptor) (remotes.Resolver, error) {
+func PushPull(ctx context.Context, fetcher ctrRemotes.FetcherFunc, pusher ctrRemotes.PusherFunc, resolverfunc ResolverFunc, discoverer orasRemotes.DiscoverFunc, desc ocispec.Descriptor) (ctrRemotes.Resolver, error) {
 	if desc.Digest != "" {
 		return resolver{
 			desc:       desc,

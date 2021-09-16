@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/containerd/containerd/remotes"
+	ctrRemotes "github.com/containerd/containerd/remotes"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // Fetcher returns a new fetcher for the provided reference.
 // All content fetched from the returned fetcher will be
 // from the namespace referred to by ref.
-func (r resolver) Fetcher(ctx context.Context, ref string) (remotes.Fetcher, error) {
+func (r resolver) Fetcher(ctx context.Context, ref string) (ctrRemotes.Fetcher, error) {
 	if r.fetcher == nil {
 		return nil, fmt.Errorf("Fetcher is disabled")
 	}

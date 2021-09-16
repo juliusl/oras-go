@@ -143,9 +143,11 @@ func (r *Registry) do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
+type CONTENT_WRITER_ALIAS = *content.OCIStore
+
 type RegistryFunctions struct {
 	fetcher    func(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error)
-	pusher     func(ctx context.Context, desc ocispec.Descriptor) (*content.PassthroughWriter, error)
+	pusher     func(ctx context.Context, desc ocispec.Descriptor) (CONTENT_WRITER_ALIAS, error)
 	resolver   func(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error)
 	discoverer func(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error)
 }
@@ -159,9 +161,10 @@ func (r *Registry) AsFunctions() *RegistryFunctions {
 	}
 }
 
-func (r *RegistryFunctions) Pusher() func(ctx context.Context, desc ocispec.Descriptor) (*content.PassthroughWriter, error) {
+func (r *RegistryFunctions) Pusher() func(ctx context.Context, desc ocispec.Descriptor) (CONTENT_WRITER_ALIAS, error) {
 	return r.pusher
 }
+
 func (r *RegistryFunctions) Fetcher() func(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
 	return r.fetcher
 }
@@ -302,7 +305,7 @@ func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifa
 	}.discover(ctx, r)
 }
 
-func (r *Registry) push(ctx context.Context, desc ocispec.Descriptor) (*content.PassthroughWriter, error) {
+func (r *Registry) push(ctx context.Context, desc ocispec.Descriptor) (CONTENT_WRITER_ALIAS, error) {
 
-	return &content.PassthroughWriter{}, fmt.Errorf("push api has not been implemented") // TODO
+	return nil, fmt.Errorf("push api has not been implemented") // TODO
 }
