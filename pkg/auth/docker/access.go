@@ -7,6 +7,18 @@ import (
 	"oras-go/pkg/remotes/oauth"
 )
 
+func NewRegistryWithAccessProvider(host, namespace string, client *Client) (*remotes.Registry, error) {
+	if len(client.configs) == 0 {
+		return nil, errors.New("client is not logged in, it cannot provide access")
+	}
+
+	ap := &dockerAccessProvider{
+		client: client,
+	}
+
+	return remotes.NewRegistry(host, namespace, ap), nil
+}
+
 type (
 	dockerAccessProvider struct {
 		client *Client
