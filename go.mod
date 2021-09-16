@@ -11,9 +11,9 @@ replace (
 )
 
 require (
-	github.com/containerd/containerd v1.5.2
+	github.com/containerd/containerd v1.5.4
+	github.com/distribution/distribution/v3 v3.0.0-20210804104954-38ab4c606ee3
 	github.com/docker/cli v20.10.7+incompatible
-	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v17.12.0-ce-rc1.0.20200618181300-9dc6525e6118+incompatible
 	github.com/docker/docker-credential-helpers v0.6.4 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
