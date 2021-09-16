@@ -58,31 +58,13 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 		if ok {
 			re, ok := ne.Err.(*RedirectError)
 			if ok {
-				resp, err := re.Retry(r.Client)
+				resp, err = re.Retry(r.Client)
 				if err != nil {
 					resp.Body.Close()
 					return nil, err
 				}
 
 				return resp, nil
-			}
-		}
-
-		if errors.Is(err, RedirectError{}) {
-			redirectErr, ok := errors.Unwrap(err).(*RedirectError)
-			if ok {
-				// Can't use the built in client, because it will add the Authorization header
-				// TODO - but still shouldn't use DefaultClient
-				resp, err = redirectErr.Retry(http.DefaultClient)
-				if err != nil {
-					resp.Body.Close()
-					return nil, err
-				}
-
-				return resp, nil
-			} else {
-				resp.Body.Close()
-				return nil, err
 			}
 		}
 
@@ -92,17 +74,21 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 				// Check our provider for access
 				access, err := r.provider.GetAccess(ctx, challengeError)
 				if err != nil {
-					resp.Body.Close()
+					if resp != nil && resp.Request != nil {
+						defer resp.Body.Close()
+					}
+
 					return nil, err
 				}
 
 				// Get a new client once we have access
 				c, err := access.GetClient(ctx)
 				if err != nil {
-					resp.Body.Close()
+					if resp != nil && resp.Request != nil {
+						defer resp.Body.Close()
+					}
 					return nil, err
 				}
-
 				r.setClient(c)
 
 				resp, err = c.Do(req)
@@ -124,7 +110,6 @@ func (r *Registry) setClient(client *http.Client) {
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) > 0 && req.URL.Host != via[0].Host &&
 			req.Header.Get("Authorization") == via[0].Header.Get("Authorization") {
-			req.Header.Del("Authorization")
 			return NewRedirectError(req)
 		}
 		return nil

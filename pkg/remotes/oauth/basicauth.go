@@ -9,10 +9,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func NewBasicAuthTokenSource(ctx context.Context, namespace, username, password string, scopes string) oauth2.TokenSource {
+func NewBasicAuthTokenSource(ctx context.Context, realm, service, username, password string, scopes string) oauth2.TokenSource {
 	src := &basicAuthTokenSource{
 		tokenFunc: func() (*oauth2.Token, error) {
-			req, err := http.NewRequest("GET", fmt.Sprintf("https://%s/oauth2/token?service=%s&scope=%s", namespace, namespace, scopes), nil)
+			req, err := http.NewRequest("GET", fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scopes), nil)
 			if err != nil {
 				return nil, err
 			}

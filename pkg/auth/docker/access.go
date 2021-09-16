@@ -123,7 +123,11 @@ func (da *dockerAccess) resolveMethod(ctx context.Context, username, password st
 		return nil, errors.New("not implemented")
 	}
 
-	tokenSource := oauth.NewBasicAuthTokenSource(ctx, da.namespace, username, password, da.scope)
+	tokenSource := oauth.NewBasicAuthTokenSource(ctx, da.realm, da.service, username, password, da.scope)
+	if tokenSource == nil {
+		return nil, errors.New("could not get a token")
+	}
+
 	return oauth.NewTokenSourceAccess(tokenSource), nil
 }
 

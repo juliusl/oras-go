@@ -46,23 +46,36 @@ func (a AuthChallengeError) ParseChallenge() (realm, service, scope, namespace s
 
 	realm = results[0][2]
 	service = results[1][4]
-	scope = results[2][5]
-	namespace = results[2][6]
+
+	if len(results) > 2 {
+		scope = results[2][5]
+		namespace = results[2][6]
+	}
 
 	return realm, service, scope, namespace, nil
 }
 
+var sasURLFormat = regexp.MustCompile(`[?]se=\d\d\d\d-\d\d-\d\d.*&sig=[\w%\d]+&sp=\w+&spr=\w+&sr=\w+&sv=\d\d\d\d-\d\d-\d\d`)
+
 func NewRedirectError(req *http.Request) *RedirectError {
-	return &RedirectError{retry: req}
+	return &RedirectError{
+		retry:    req,
+		isSasURL: sasURLFormat.MatchString(req.URL.String()),
+	}
 }
 
 // RedirectError is an opaque type returned when encountering a 302 Redirect
 type RedirectError struct {
-	retry *http.Request
+	retry    *http.Request
+	isSasURL bool
 	error
 }
 
 func (r RedirectError) Retry(client *http.Client) (*http.Response, error) {
+	if r.isSasURL {
+		return http.DefaultClient.Do(r.retry)
+	}
+
 	return client.Do(r.retry)
 }
 
