@@ -3,8 +3,9 @@ package docker
 import (
 	"context"
 	"errors"
-	"oras-go/pkg/remotes"
-	"oras-go/pkg/remotes/oauth"
+
+	"oras.land/oras-go/pkg/remotes"
+	"oras.land/oras-go/pkg/remotes/oauth"
 
 	"oras.land/oras-go/pkg/auth"
 )
