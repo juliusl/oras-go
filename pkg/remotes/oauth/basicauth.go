@@ -16,7 +16,10 @@ func NewBasicAuthTokenSource(ctx context.Context, realm, service, username, pass
 			if err != nil {
 				return nil, err
 			}
-			req.SetBasicAuth(username, password)
+
+			if username != "" && password != "" {
+				req.SetBasicAuth(username, password)
+			} // this is anonymous auth
 
 			c, ok := ctx.Value(oauth2.HTTPClient).(*http.Client)
 			if !ok {

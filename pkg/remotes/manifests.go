@@ -47,7 +47,35 @@ func (m manifests) getDescriptor(ctx context.Context, doer Doer) (ocispec.Descri
 }
 
 // getDescriptorWithManifest tries to resolve the reference by fetching the manifest
-func (m manifests) getDescriptorWithManifest(ctx context.Context, doer Doer) (*ocispec.Manifest, error) {
+func (m manifests) getDescriptorWithManifest(ctx context.Context, doer Doer) (*ocispec.Manifest, digest.Digest, error) {
+	// If we didn't get a digest by this point, we need to pull the manifest
+	request, err := endpoints.e3GET.prepare()(ctx,
+		m.ref.add.host,
+		m.ref.add.ns,
+		m.ref.add.loc)
+	if err != nil {
+		return nil, "", err
+	}
+
+	resp, err := doer.Do(ctx, request)
+	if err != nil {
+		return nil, "", err
+	}
+
+	defer resp.Body.Close()
+
+	manifest := &ocispec.Manifest{}
+	err = json.NewDecoder(resp.Body).Decode(manifest)
+	if err != nil {
+		return nil, "", err
+	}
+
+	d := resp.Header.Get("Docker-Content-Digest")
+
+	return manifest, digest.Digest(d), nil
+}
+
+func (m manifests) getManifest(ctx context.Context, doer Doer) (*ocispec.Manifest, error) {
 	// If we didn't get a digest by this point, we need to pull the manifest
 	request, err := endpoints.e3GET.prepare()(ctx,
 		m.ref.add.host,

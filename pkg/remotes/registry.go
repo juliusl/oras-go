@@ -2,13 +2,11 @@ package remotes
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"oras.land/oras-go/pkg/content"
@@ -189,6 +187,35 @@ type reference struct {
 	digst digest.Digest
 }
 
+func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Manifest, error) {
+	host, ns, loc, err := Parse(ref)
+	if err != nil {
+		return nil, fmt.Errorf("reference is is not valid")
+	}
+
+	if ns != r.namespace {
+		return nil, fmt.Errorf("namespace does not match current registry context")
+	}
+
+	if host != r.host {
+		return nil, fmt.Errorf("host does not match current registry context")
+	}
+
+	// format the reference
+	manifestRef := reference{
+		add: address{
+			host: r.host,
+			ns:   r.namespace,
+			loc:  loc,
+		},
+		digst: "",
+	}
+
+	m := manifests{ref: manifestRef}
+
+	return m.getManifest(ctx, r)
+}
+
 // resolve resolves a reference to a descriptor
 func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
 	if r == nil {
@@ -228,24 +255,22 @@ func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc o
 	m := manifests{ref: manifestRef}
 
 	// Return early if we can get the manifest early
-	// desc, err = m.getDescriptor(ctx, r)
-	// if err == nil && desc.Digest != "" {
-	// 	manifestRef.digst = desc.Digest
-	// 	manifestRef.media = desc.MediaType
-	// 	r.descriptors[manifestRef] = &desc
+	desc, err = m.getDescriptor(ctx, r)
+	if err == nil && desc.Digest != "" {
+		manifestRef.digst = desc.Digest
+		manifestRef.media = desc.MediaType
+		r.descriptors[manifestRef] = &desc
 
-	// 	return ref, desc, nil
-	// } else if err != nil {
-	// 	return "", ocispec.Descriptor{}, err
-	// }
-
-	// Get the manifest to retrieve the desc
-	manifest, err := m.getDescriptorWithManifest(ctx, r)
-	if err != nil {
+		return ref, desc, nil
+	} else if err != nil {
 		return "", ocispec.Descriptor{}, err
 	}
 
-	json.NewEncoder(os.Stdout).Encode(manifest)
+	// Get the manifest to retrieve the desc
+	manifest, _, err := m.getDescriptorWithManifest(ctx, r)
+	if err != nil {
+		return "", ocispec.Descriptor{}, err
+	}
 
 	manifestRef.digst = desc.Digest
 	r.descriptors[manifestRef] = &manifest.Config
@@ -258,12 +283,6 @@ func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadC
 	if r == nil {
 		return nil, fmt.Errorf("reference is nil")
 	}
-
-	// ensure the registry is running
-	// err := r.ping(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	b := blob{
 		ref: reference{
@@ -284,12 +303,6 @@ func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifa
 	if r == nil {
 		return nil, fmt.Errorf("reference is nil")
 	}
-
-	// ensure the registry is running
-	// err := r.ping(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	return artifacts{
 		artifactType: artifactType,
