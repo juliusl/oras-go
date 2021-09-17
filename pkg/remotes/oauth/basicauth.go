@@ -3,7 +3,9 @@ package oauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 
 	"golang.org/x/oauth2"
@@ -34,12 +36,35 @@ func NewBasicAuthTokenSource(ctx context.Context, realm, service, username, pass
 			defer resp.Body.Close()
 
 			if resp.StatusCode != 200 {
-				return nil, fmt.Errorf("could not get access token")
+				return nil, fmt.Errorf("basicauth: could not get access token")
+			}
+
+			data, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
 			}
 
 			token := &oauth2.Token{}
-			if err := json.NewDecoder(resp.Body).Decode(token); err != nil {
+			if err := json.Unmarshal(data, token); err != nil {
 				return nil, err
+			}
+
+			if token.AccessToken == "" {
+				m := make(map[string]string)
+
+				err = json.Unmarshal(data, &m)
+				if err != nil {
+					return nil, err
+				}
+
+				// ghcr.io returns just a single field called token
+				t, ok := m["token"]
+				if ok {
+					token.AccessToken = t
+					return token, nil
+				}
+
+				return nil, errors.New("basicauth: unrecognized token format")
 			}
 
 			return token, nil
