@@ -36,7 +36,7 @@ func (a AuthChallengeError) Unwrap() error {
 // Www-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:samalba/my-app:pull,push"
 
 // Parsing headers to format requests to OAuth2Providers
-var parseBearerChallengeHeader = regexp.MustCompile(`(:?realm="(\w[:/.\w]+[^\\b][\w])")|(service="(\w[\w.]+[\w])")|(?:scope="(\w+:([a-zA-Z/]*):([\w,]*))")|(error="(\w+)")`)
+var parseBearerChallengeHeader = regexp.MustCompile(`(:?realm="(\w[:/.\w]+[^\\b][\w])")|(service="(\w[\w.]+[\w])")|(?:scope="(\w+:([a-zA-Z/-]*):([\w,]*))")|(error="(\w+)")`)
 
 func (a AuthChallengeError) ParseChallenge() (realm, service, scope, namespace string, err error) {
 	results := parseBearerChallengeHeader.FindAllStringSubmatch(a.challenge, -1)
