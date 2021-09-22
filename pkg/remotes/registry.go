@@ -187,18 +187,18 @@ type reference struct {
 	digst digest.Digest
 }
 
-func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Manifest, error) {
+func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Descriptor, *ocispec.Manifest, error) {
 	host, ns, loc, err := Parse(ref)
 	if err != nil {
-		return nil, fmt.Errorf("reference is is not valid")
+		return nil, nil, fmt.Errorf("reference is is not valid")
 	}
 
 	if ns != r.namespace {
-		return nil, fmt.Errorf("namespace does not match current registry context")
+		return nil, nil, fmt.Errorf("namespace does not match current registry context")
 	}
 
 	if host != r.host {
-		return nil, fmt.Errorf("host does not match current registry context")
+		return nil, nil, fmt.Errorf("host does not match current registry context")
 	}
 
 	// format the reference
@@ -213,70 +213,30 @@ func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Manife
 
 	m := manifests{ref: manifestRef}
 
-	return m.getManifest(ctx, r)
+	desc, spec, err := m.getManifest(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if spec.Annotations == nil {
+		spec.Annotations = make(map[string]string)
+	}
+
+	spec.Annotations["host"] = host
+	spec.Annotations["namespace"] = ns
+	spec.Annotations["loc"] = loc
+
+	return desc, spec, nil
 }
 
 // resolve resolves a reference to a descriptor
 func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
-	if r == nil {
-		return "", ocispec.Descriptor{}, fmt.Errorf("registry is nil")
-	}
-
-	// // ensure the registry is running
-	// err = r.ping(ctx)
-	// if err != nil {
-	// 	return "", ocispec.Descriptor{}, err
-	// }
-
-	host, ns, loc, err := Parse(ref)
-	if err != nil {
-		return "", ocispec.Descriptor{}, fmt.Errorf("reference is is not valid")
-	}
-
-	if ns != r.namespace {
-		return "", ocispec.Descriptor{}, fmt.Errorf("namespace does not match current registry context")
-	}
-
-	if host != r.host {
-		return "", ocispec.Descriptor{}, fmt.Errorf("host does not match current registry context")
-	}
-
-	// format the reference
-	manifestRef := reference{
-		add: address{
-			host: r.host,
-			ns:   r.namespace,
-			loc:  loc,
-		},
-		digst: "",
-	}
-
-	// format the manifests request
-	m := manifests{ref: manifestRef}
-
-	// Return early if we can get the manifest early
-	desc, err = m.getDescriptor(ctx, r)
-	if err == nil && desc.Digest != "" {
-		manifestRef.digst = desc.Digest
-		manifestRef.media = desc.MediaType
-		r.descriptors[manifestRef] = &desc
-
-		return ref, desc, nil
-	} else if err != nil {
-		return "", ocispec.Descriptor{}, err
-	}
-
-	// Get the manifest to retrieve the desc
-	manifest, _, err := m.getDescriptorWithManifest(ctx, r)
+	d, _, err := r.GetManifest(ctx, ref)
 	if err != nil {
 		return "", ocispec.Descriptor{}, err
 	}
 
-	manifestRef.digst = desc.Digest
-	r.descriptors[manifestRef] = &manifest.Config
-	r.manifest[manifestRef] = manifest
-
-	return ref, manifest.Config, nil
+	return ref, *d, nil
 }
 
 func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
