@@ -188,7 +188,7 @@ type reference struct {
 }
 
 func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Descriptor, *ocispec.Manifest, error) {
-	host, ns, loc, err := Parse(ref)
+	_, host, ns, loc, err := Parse(ref)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reference is is not valid")
 	}

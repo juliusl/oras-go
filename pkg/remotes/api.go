@@ -104,38 +104,22 @@ func (r RedirectError) Retry(client *http.Client) (*http.Response, error) {
 // <artifacttype>  - analagous to refernce except that it allows for symbols
 
 var (
-	referenceRegex = regexp.MustCompile(`[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`)
+	referenceRegex = regexp.MustCompile(`([.\w\d:-]+)\/{1,}?([a-z0-9]+(?:[/._-][a-z0-9]+)*(?:[a-z0-9]+(?:[/._-][a-z0-9]+)*)*)[:@]([a-zA-Z0-9_]+:?[a-zA-Z0-9._-]{0,127})`)
 )
 
-func Parse(reference string) (string, string, string, error) {
-	matches := referenceRegex.FindAllString(reference, -1)
+func Parse(parsing string) (reference string, host string, namespace string, locator string, err error) {
+	matches := referenceRegex.FindAllStringSubmatch(parsing, -1)
 	// Technically a namespace is allowed to have "/"'s, while a reference is not allowed to
 	// That means if you string match the reference regex, then you should end up with basically the first segment being the host
 	// the middle part being the namespace
 	// and the last part should be the tag
 
 	// This should be the case most of the time
-	if len(matches) == 3 {
-		return matches[0], matches[1], matches[2], nil
+	if len(matches[0]) == 4 {
+		return matches[0][0], matches[0][1], matches[0][2], matches[0][3], nil
 	}
 
-	if len(matches) == 0 {
-		return "", "", "", fmt.Errorf("invalid reference")
-	}
-
-	host := matches[0]
-
-	if strings.HasPrefix(strings.ToLower(matches[len(matches)-2]), "sha") {
-		namespace := strings.Join(matches[1:len(matches)-2], "/")
-		ref := strings.Join(matches[len(matches)-2:], ":")
-
-		return host, namespace, ref, nil
-	}
-
-	namespace := strings.Join(matches[1:len(matches)-1], "/")
-	ref := matches[len(matches)-1]
-
-	return host, namespace, ref, nil
+	return "", "", "", "", errors.New("could not parse reference")
 }
 
 func ValidateReference(reference string) (string, error) {
