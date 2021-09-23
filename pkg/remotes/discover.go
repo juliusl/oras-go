@@ -3,19 +3,12 @@ package remotes
 import (
 	"context"
 
-	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	v1 "github.com/oras-project/artifacts-spec/specs-go/v1"
+	artifactspec "github.com/oras-project/artifacts-spec/specs-go/v1"
 )
 
-// TODO: WIP, probably need to discuss this API since it is new
-type DiscoveredArtifact struct {
-	Digest   digest.Digest
-	Manifest v1.Descriptor
-}
-
 type Artifacts struct {
-	Artifacts []DiscoveredArtifact
+	References []artifactspec.Descriptor `json:"references"` // References is an array of descriptors that point to a manifest
 }
 
 type DiscoverFunc func(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error)

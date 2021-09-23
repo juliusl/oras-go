@@ -13,6 +13,7 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	artifactspec "github.com/oras-project/artifacts-spec/specs-go/v1"
 )
 
 func NewRegistry(host, ns string, provider AccessProvider) *Registry {
@@ -214,6 +215,48 @@ func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Descri
 	m := manifests{ref: manifestRef}
 
 	desc, spec, err := m.getManifest(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if spec.Annotations == nil {
+		spec.Annotations = make(map[string]string)
+	}
+
+	spec.Annotations["host"] = host
+	spec.Annotations["namespace"] = ns
+	spec.Annotations["loc"] = loc
+
+	return desc, spec, nil
+}
+
+func (r *Registry) GetArtifactManifest(ctx context.Context, ref string) (*artifactspec.Descriptor, *artifactspec.Manifest, error) {
+	_, host, ns, loc, err := Parse(ref)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reference is is not valid")
+	}
+
+	if ns != r.namespace {
+		return nil, nil, fmt.Errorf("namespace does not match current registry context")
+	}
+
+	if host != r.host {
+		return nil, nil, fmt.Errorf("host does not match current registry context")
+	}
+
+	// format the reference
+	manifestRef := reference{
+		add: address{
+			host: r.host,
+			ns:   r.namespace,
+			loc:  loc,
+		},
+		digst: "",
+	}
+
+	m := manifests{ref: manifestRef}
+
+	desc, spec, err := m.getArtifactManifest(ctx, r)
 	if err != nil {
 		return nil, nil, err
 	}

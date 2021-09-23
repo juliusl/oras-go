@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	artifactspec "github.com/oras-project/artifacts-spec/specs-go/v1"
 )
 
 func NewAuthChallengeError(challenge string) *AuthChallengeError {
@@ -105,6 +108,7 @@ func (r RedirectError) Retry(client *http.Client) (*http.Response, error) {
 
 var (
 	referenceRegex = regexp.MustCompile(`([.\w\d:-]+)\/{1,}?([a-z0-9]+(?:[/._-][a-z0-9]+)*(?:[a-z0-9]+(?:[/._-][a-z0-9]+)*)*)[:@]([a-zA-Z0-9_]+:?[a-zA-Z0-9._-]{0,127})`)
+	localhostRegex = regexp.MustCompile(`(?:^localhost$)|(?:^localhost:\d{0,5}$)`)
 )
 
 func Parse(parsing string) (reference string, host string, namespace string, locator string, err error) {
@@ -189,7 +193,12 @@ func (r req) prepare() referencePrepareFunc {
 			path = fmt.Sprintf(r.format, ns, ref)
 		}
 
-		url, err := url.Parse("https://" + host + path)
+		protocol := "https://"
+		if localhostRegex.MatchString(host) {
+			protocol = "http://"
+		}
+
+		url, err := url.Parse(protocol + host + path)
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +207,12 @@ func (r req) prepare() referencePrepareFunc {
 			return nil, err
 		}
 
-		req.Header.Add("Accept", r.accept)
+		req.Header.Add("Accept", strings.Join([]string{
+			manifestV2json,
+			manifestlistV2json,
+			artifactspec.MediaTypeArtifactManifest,
+			ocispec.MediaTypeImageManifest,
+			ocispec.MediaTypeImageIndex, "*/*"}, ", "))
 
 		return req, nil
 	}
@@ -209,7 +223,12 @@ func (r req) prepareWithDescriptor() contentPrepareFunc {
 	return func(c context.Context, host, ns, digest, mediaType string) (*http.Request, error) {
 		path := fmt.Sprintf(r.format, ns, digest)
 
-		url, err := url.Parse("https://" + host + path)
+		protocol := "https://"
+		if localhostRegex.MatchString(host) {
+			protocol = "http://"
+		}
+
+		url, err := url.Parse(protocol + host + path)
 		if err != nil {
 			return nil, err
 		}
@@ -218,7 +237,7 @@ func (r req) prepareWithDescriptor() contentPrepareFunc {
 			return nil, err
 		}
 
-		req.Header.Add("Accept", mediaType)
+		req.Header.Add("Accept", strings.Join([]string{"*/*"}, ", "))
 
 		return req, nil
 	}
@@ -233,7 +252,12 @@ func (r req) prepareWithArtifactType() artifactPrepareFunc {
 		// Special case: if this is e1 since there are no parameters for that call
 		path = fmt.Sprintf(r.format, ns, digest, artifactType)
 
-		url, err := url.Parse("https://" + host + path)
+		protocol := "https://"
+		if localhostRegex.MatchString(host) {
+			protocol = "http://"
+		}
+
+		url, err := url.Parse(protocol + host + path)
 		if err != nil {
 			return nil, err
 		}
@@ -242,8 +266,6 @@ func (r req) prepareWithArtifactType() artifactPrepareFunc {
 		if err != nil {
 			return nil, err
 		}
-
-		req.Header.Add("Accept", mediaType)
 
 		return req, nil
 	}
@@ -267,7 +289,7 @@ var endpoints = struct {
 	req{"GET", v2blobs, manifestV2json},
 	req{"GET", v2TagsList, manifestV2json},
 	req{"GET", v2TagsFilterListQuery + v2TagsFilterListQuery, manifestV2json},
-	req{"GET", orasListReferrersFormat, ""},
+	req{"GET", orasListReferrersFormat, artifactspec.MediaTypeArtifactManifest},
 	req{"GET", orasGetSignatures, ""},
 }
 

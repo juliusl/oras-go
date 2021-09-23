@@ -29,8 +29,11 @@ func (a artifacts) discover(ctx context.Context, doer Doer) (*Artifacts, error) 
 
 	defer resp.Body.Close()
 
-	d := &Artifacts{}
-	json.NewDecoder(resp.Body).Decode(d)
+	art := &Artifacts{}
+	err = json.NewDecoder(resp.Body).Decode(art)
+	if err != nil {
+		return nil, err
+	}
 
-	return d, nil
+	return art, nil
 }
