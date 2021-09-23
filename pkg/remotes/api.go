@@ -209,10 +209,9 @@ func (r req) prepare() referencePrepareFunc {
 
 		req.Header.Add("Accept", strings.Join([]string{
 			manifestV2json,
-			manifestlistV2json,
 			artifactspec.MediaTypeArtifactManifest,
 			ocispec.MediaTypeImageManifest,
-			ocispec.MediaTypeImageIndex, "*/*"}, ", "))
+			"*/*"}, ", "))
 
 		return req, nil
 	}
