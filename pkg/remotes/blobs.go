@@ -3,48 +3,72 @@ package remotes
 import (
 	"context"
 	"io"
+	"net/http"
 )
 
 type blob struct {
-	ref reference
+	Service
 }
 
-// push
-func (b blob) push(ctx context.Context) error {
-	// First write the manifest
+var _ Object = (*blob)(nil)
 
-	// Return a writer to push the content
+func (b blob) Push(ctx context.Context, client Client, content io.ReadCloser) error {
+	api, err := b.Blobs()
+	if err != nil {
+		return err
+	}
+
+	req, err := b.Request(ctx, http.MethodHead, api, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	req, err = b.Request(ctx, http.MethodPut, api, content)
+	if err != nil {
+		return err
+	}
+
+	resp, err = client.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
 	return nil
 }
 
-func (b blob) fetch(ctx context.Context, doer Doer) (io.ReadCloser, error) {
-	request, err := endpoints.e2HEAD.prepareWithDescriptor()(ctx,
-		b.ref.add.host,
-		b.ref.add.ns,
-		b.ref.digst.String(),
-		b.ref.media)
-
+func (b blob) Fetch(ctx context.Context, client Client) (io.ReadCloser, error) {
+	blobsAPI, err := b.Blobs()
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := doer.Do(ctx, request)
+	request, err := b.Request(ctx, http.MethodHead, blobsAPI, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
 	defer resp.Body.Close()
 
-	request, err = endpoints.e2GET.prepareWithDescriptor()(ctx,
-		b.ref.add.host,
-		b.ref.add.ns,
-		b.ref.digst.String(),
-		b.ref.media)
+	request, err = b.Request(ctx, http.MethodGet, blobsAPI, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	content, err := doer.Do(ctx, request)
+	content, err := client.Do(ctx, request)
 	if err != nil {
 		return nil, err
 	}

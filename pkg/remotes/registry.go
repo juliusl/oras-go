@@ -8,41 +8,49 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"oras.land/oras-go/pkg/content"
-
-	"github.com/opencontainers/go-digest"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	artifactspec "github.com/oras-project/artifacts-spec/specs-go/v1"
 )
 
+// NewRegistry is a function to return an instance of a Registry struct
+// The Registry struct can be adapted to several platforms and provides
+// the rest api client to the registry
 func NewRegistry(host, ns string, provider AccessProvider) *Registry {
 	return &Registry{
-		provider:    provider,
-		host:        host,
-		namespace:   ns,
-		descriptors: make(map[reference]*ocispec.Descriptor),
-		manifest:    make(map[reference]*ocispec.Manifest),
+		provider:  provider,
+		host:      host,
+		namespace: ns,
 	}
 }
 
 type (
-	// Doer is an interface for doing
-	Doer interface {
+	// Client is an interface to communicate with the registry
+	Client interface {
+		Respository() (host, namespace string)
 		// Do is a function that sends the request and handles the response
 		Do(ctx context.Context, req *http.Request) (*http.Response, error)
 	}
 
+	// Object is an interface to interact with regsitry objects
+	// examples of regsitry objects are manifests, blobs, artifacts, etc
+	Object interface {
+		// Fetch is a function that fetches content from the registry object
+		Fetch(ctx context.Context, client Client) (io.ReadCloser, error)
+
+		// Push is a function that pushes content to the registry object
+		Push(ctx context.Context, client Client, content io.ReadCloser) error
+	}
+
 	// Registry is an opaqueish type which represents an OCI V2 API registry
 	Registry struct {
-		host        string
-		namespace   string
-		provider    AccessProvider
-		descriptors map[reference]*ocispec.Descriptor
-		manifest    map[reference]*ocispec.Manifest
+		host      string
+		namespace string
+		provider  AccessProvider
 		*http.Client
 	}
 )
+
+func (r *Registry) Respository() (string, string) {
+	return r.host, r.namespace
+}
 
 // Do is a function that does the request, error handling is concentrated in this method
 func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
@@ -67,7 +75,7 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 			}
 		}
 
-		if errors.Is(err, AuthChallengeErr) {
+		if errors.Is(err, ErrAuthChallenge) {
 			challengeError, ok := err.(*AuthChallengeError)
 			if ok {
 				// Check our provider for access
@@ -105,17 +113,6 @@ func (r *Registry) Do(ctx context.Context, req *http.Request) (*http.Response, e
 	return resp, nil
 }
 
-func (r *Registry) setClient(client *http.Client) {
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) > 0 && req.URL.Host != via[0].Host &&
-			req.Header.Get("Authorization") == via[0].Header.Get("Authorization") {
-			return NewRedirectError(req)
-		}
-		return nil
-	}
-	r.Client = client
-}
-
 // do calls the concrete http client, and handles http related status code issues
 func (r *Registry) do(req *http.Request) (*http.Response, error) {
 	resp, err := r.Client.Do(req)
@@ -123,14 +120,15 @@ func (r *Registry) do(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode > 299 {
 		if resp.StatusCode == 401 {
 			c, ok := resp.Header["Www-Authenticate"]
 			if ok {
+				resp.Body.Close()
 				// TODO not sure what the delimitter would be
 				return nil, NewAuthChallengeError(strings.Join(c, ","))
 			}
-
+			resp.Body.Close()
 			return nil, fmt.Errorf("not authenticated")
 		}
 
@@ -142,186 +140,15 @@ func (r *Registry) do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-type CONTENT_WRITER_ALIAS = *content.OCIStore
-
-type RegistryFunctions struct {
-	fetcher    func(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error)
-	pusher     func(ctx context.Context, desc ocispec.Descriptor) (CONTENT_WRITER_ALIAS, error)
-	resolver   func(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error)
-	discoverer func(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error)
-}
-
-func (r *Registry) AsFunctions() *RegistryFunctions {
-	return &RegistryFunctions{
-		fetcher:    r.fetch,
-		pusher:     r.push,
-		resolver:   r.resolve,
-		discoverer: r.discover,
+// setClient is a function that sets the current http.Client, it also ensures that the CheckRedirect callback
+// returns a redirect error for processing
+func (r *Registry) setClient(client *http.Client) {
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 && req.URL.Host != via[0].Host &&
+			req.Header.Get("Authorization") == via[0].Header.Get("Authorization") {
+			return NewRedirectError(req)
+		}
+		return nil
 	}
-}
-
-func (r *RegistryFunctions) Pusher() func(ctx context.Context, desc ocispec.Descriptor) (CONTENT_WRITER_ALIAS, error) {
-	return r.pusher
-}
-
-func (r *RegistryFunctions) Fetcher() func(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
-	return r.fetcher
-}
-
-func (r *RegistryFunctions) Resolver() func(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
-	return r.resolver
-}
-
-func (r *RegistryFunctions) Discoverer() func(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error) {
-	return r.discoverer
-}
-
-type address struct {
-	host string
-	ns   string
-	loc  string
-}
-
-type reference struct {
-	add   address
-	media string
-	digst digest.Digest
-}
-
-func (r *Registry) GetManifest(ctx context.Context, ref string) (*ocispec.Descriptor, *ocispec.Manifest, error) {
-	_, host, ns, loc, err := Parse(ref)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reference is is not valid")
-	}
-
-	if ns != r.namespace {
-		return nil, nil, fmt.Errorf("namespace does not match current registry context")
-	}
-
-	if host != r.host {
-		return nil, nil, fmt.Errorf("host does not match current registry context")
-	}
-
-	// format the reference
-	manifestRef := reference{
-		add: address{
-			host: r.host,
-			ns:   r.namespace,
-			loc:  loc,
-		},
-		digst: "",
-	}
-
-	m := manifests{ref: manifestRef}
-
-	desc, spec, err := m.getManifest(ctx, r)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if spec.Annotations == nil {
-		spec.Annotations = make(map[string]string)
-	}
-
-	spec.Annotations["host"] = host
-	spec.Annotations["namespace"] = ns
-	spec.Annotations["loc"] = loc
-
-	return desc, spec, nil
-}
-
-func (r *Registry) GetArtifactManifest(ctx context.Context, ref string) (*artifactspec.Descriptor, *artifactspec.Manifest, error) {
-	_, host, ns, loc, err := Parse(ref)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reference is is not valid")
-	}
-
-	if ns != r.namespace {
-		return nil, nil, fmt.Errorf("namespace does not match current registry context")
-	}
-
-	if host != r.host {
-		return nil, nil, fmt.Errorf("host does not match current registry context")
-	}
-
-	// format the reference
-	manifestRef := reference{
-		add: address{
-			host: r.host,
-			ns:   r.namespace,
-			loc:  loc,
-		},
-		digst: "",
-	}
-
-	m := manifests{ref: manifestRef}
-
-	desc, spec, err := m.getArtifactManifest(ctx, r)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if spec.Annotations == nil {
-		spec.Annotations = make(map[string]string)
-	}
-
-	spec.Annotations["host"] = host
-	spec.Annotations["namespace"] = ns
-	spec.Annotations["loc"] = loc
-
-	return desc, spec, nil
-}
-
-// resolve resolves a reference to a descriptor
-func (r *Registry) resolve(ctx context.Context, ref string) (name string, desc ocispec.Descriptor, err error) {
-	d, _, err := r.GetManifest(ctx, ref)
-	if err != nil {
-		return "", ocispec.Descriptor{}, err
-	}
-
-	return ref, *d, nil
-}
-
-func (r *Registry) fetch(ctx context.Context, desc ocispec.Descriptor) (io.ReadCloser, error) {
-	if r == nil {
-		return nil, fmt.Errorf("reference is nil")
-	}
-
-	b := blob{
-		ref: reference{
-			add: address{
-				host: r.host,
-				ns:   r.namespace,
-				loc:  "",
-			},
-			digst: desc.Digest,
-			media: desc.MediaType,
-		},
-	}
-
-	return b.fetch(ctx, r)
-}
-
-func (r *Registry) discover(ctx context.Context, desc ocispec.Descriptor, artifactType string) (*Artifacts, error) {
-	if r == nil {
-		return nil, fmt.Errorf("reference is nil")
-	}
-
-	return artifacts{
-		artifactType: artifactType,
-		ref: reference{
-			add: address{
-				host: r.host,
-				ns:   r.namespace,
-				loc:  "",
-			},
-			digst: desc.Digest,
-			media: desc.MediaType,
-		},
-	}.discover(ctx, r)
-}
-
-func (r *Registry) push(ctx context.Context, desc ocispec.Descriptor) (CONTENT_WRITER_ALIAS, error) {
-
-	return nil, fmt.Errorf("push api has not been implemented") // TODO
+	r.Client = client
 }

@@ -3,121 +3,77 @@ package remotes
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 
-	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	artifactspec "github.com/oras-project/artifacts-spec/specs-go/v1"
 )
 
 type manifests struct {
-	ref reference
+	Service
 }
 
-func (m manifests) getManifest(ctx context.Context, doer Doer) (desc *ocispec.Descriptor, manifest *ocispec.Manifest, err error) {
-	request, err := endpoints.e3HEAD.prepare()(ctx,
-		m.ref.add.host,
-		m.ref.add.ns,
-		m.ref.add.loc)
+func (m manifests) Fetch(ctx context.Context, client Client) (io.ReadCloser, error) {
+	_, o, err := m.getManifest(ctx, client)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	resp, err := doer.Do(ctx, request)
+	pr, pw := io.Pipe()
+
+	go func(w *io.PipeWriter) {
+		err := json.NewEncoder(w).Encode(o)
+		if err != nil {
+			w.CloseWithError(err)
+		} else {
+			w.Close()
+		}
+	}(pw)
+
+	return pr, nil
+}
+
+func (m manifests) Push(ctx context.Context, client Client, body io.ReadCloser) error {
+	api, err := m.Manifests()
 	if err != nil {
-		return nil, nil, err
+		return err
+	}
+
+	req, err := m.Request(ctx, http.MethodHead, api, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Do(ctx, req)
+	if err != nil {
+		return err
 	}
 
 	defer resp.Body.Close()
 
-	d := resp.Header.Get("Docker-Content-Digest")
-	c := resp.Header.Get("Content-Type")
-	s := resp.ContentLength
-
-	err = digest.Digest(d).Validate()
+	req, err = m.Request(ctx, http.MethodPut, api, body)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
-	desc = &ocispec.Descriptor{
-		Digest:    digest.Digest(d),
-		MediaType: c,
-		Size:      s,
-	}
-
-	// If we didn't get a digest by this point, we need to pull the manifest
-	request, err = endpoints.e3GET.prepare()(ctx,
-		m.ref.add.host,
-		m.ref.add.ns,
-		m.ref.add.loc)
+	resp, err = client.Do(ctx, req)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	resp, err = doer.Do(ctx, request)
-	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	defer resp.Body.Close()
+
+	return nil
+}
+
+func (m manifests) getManifest(ctx context.Context, client Client) (desc *ocispec.Descriptor, manifest *ocispec.Manifest, err error) {
+	desc, body, err := m.Resolve(ctx, client)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	manifest = &ocispec.Manifest{}
-	err = json.NewDecoder(resp.Body).Decode(manifest)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return desc, manifest, nil
-}
-
-func (m manifests) getArtifactManifest(ctx context.Context, doer Doer) (desc *artifactspec.Descriptor, manifest *artifactspec.Manifest, err error) {
-	request, err := endpoints.e3HEAD.prepare()(ctx,
-		m.ref.add.host,
-		m.ref.add.ns,
-		m.ref.add.loc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resp, err := doer.Do(ctx, request)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	defer resp.Body.Close()
-
-	d := resp.Header.Get("Docker-Content-Digest")
-	c := resp.Header.Get("Content-Type")
-	s := resp.ContentLength
-
-	err = digest.Digest(d).Validate()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	desc = &artifactspec.Descriptor{
-		Digest:    digest.Digest(d),
-		MediaType: c,
-		Size:      s,
-	}
-
-	// If we didn't get a digest by this point, we need to pull the manifest
-	request, err = endpoints.e3GET.prepare()(ctx,
-		m.ref.add.host,
-		m.ref.add.ns,
-		m.ref.add.loc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resp, err = doer.Do(ctx, request)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	defer resp.Body.Close()
-
-	manifest = &artifactspec.Manifest{}
-	err = json.NewDecoder(resp.Body).Decode(manifest)
+	err = json.Unmarshal(body, manifest)
 	if err != nil {
 		return nil, nil, err
 	}

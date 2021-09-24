@@ -1,101 +1,27 @@
 package remotes
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
-
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	artifactspec "github.com/oras-project/artifacts-spec/specs-go/v1"
 )
-
-func NewAuthChallengeError(challenge string) *AuthChallengeError {
-	return &AuthChallengeError{challenge: challenge}
-}
-
-var AuthChallengeErr = errors.New("auth-challenge")
-
-// AuthChallengeError is an opaque type returned when encountering a 401 Unauthorized from the registry
-type AuthChallengeError struct {
-	challenge string
-	error
-}
-
-func (a AuthChallengeError) Is(target error) bool {
-	return target == AuthChallengeErr
-}
-
-func (a AuthChallengeError) Unwrap() error {
-	return errors.New("auth-challenge")
-}
-
-// Challenge header examples...
-// Www-Authenticate: Bearer realm="https://example.azurecr.io/oauth2/token",service="example.azurecr.io"
-// Www-Authenticate: Bearer realm="https://example.azurecr.io/oauth2/token",service="example.azurecr.io",scope="repository:ubuntu:pull"
-// Www-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:samalba/my-app:pull,push"
-
-// Parsing headers to format requests to OAuth2Providers
-var parseBearerChallengeHeader = regexp.MustCompile(`(:?realm="(\w[:/.\w]+[^\\b][\w])")|(service="(\w[\w.]+[\w])")|(?:scope="(\w+:([a-zA-Z/-]*):([\w,]*))")|(error="(\w+)")`)
-
-func (a AuthChallengeError) ParseChallenge() (realm, service, scope, namespace string, err error) {
-	results := parseBearerChallengeHeader.FindAllStringSubmatch(a.challenge, -1)
-	if len(results) <= 0 {
-		return "", "", "", "", fmt.Errorf("invalid challenge")
-	}
-
-	realm = results[0][2]
-	service = results[1][4]
-
-	if len(results) > 2 {
-		scope = results[2][5]
-		namespace = results[2][6]
-	}
-
-	return realm, service, scope, namespace, nil
-}
-
-var sasURLFormat = regexp.MustCompile(`[?]se=\d\d\d\d-\d\d-\d\d.*&sig=[\w%\d]+&sp=\w+&spr=\w+&sr=\w+&sv=\d\d\d\d-\d\d-\d\d`)
-
-func NewRedirectError(req *http.Request) *RedirectError {
-	return &RedirectError{
-		retry:    req,
-		isSasURL: sasURLFormat.MatchString(req.URL.String()),
-	}
-}
-
-// RedirectError is an opaque type returned when encountering a 302 Redirect
-type RedirectError struct {
-	retry    *http.Request
-	isSasURL bool
-	error
-}
-
-func (r RedirectError) Retry(client *http.Client) (*http.Response, error) {
-	if r.isSasURL {
-		return http.DefaultClient.Do(r.retry)
-	}
-
-	return client.Do(r.retry)
-}
 
 // Table of endpoints for OCI v2
 // end-1	GET			/v2/														200	404/401
 // end-2	GET / HEAD	/v2/<name>/blobs/<digest>									200	404
-// end-3	GET / HEAD	/v2/<name>/manifests/<reference>							200	404
+// end-10	DELETE		/v2/<name>/blobs/<digest>									202	404/405
 // end-4a	POST		/v2/<name>/blobs/uploads/									202	404
 // end-4b	POST		/v2/<name>/blobs/uploads/?digest=<digest>					201/202	404/400
 // end-5	PATCH		/v2/<name>/blobs/uploads/<reference>						202	404/416
 // end-6	PUT			/v2/<name>/blobs/uploads/<reference>?digest=<digest>		201	404/400
+// end-11	POST		/v2/<name>/blobs/uploads/?mount=<digest>&from=<other_name>	201	404
+
+// end-3	GET / HEAD	/v2/<name>/manifests/<reference>							200	404
 // end-7	PUT			/v2/<name>/manifests/<reference>							201	404
+// end-9	DELETE		/v2/<name>/manifests/<reference>							202	404/400/405
 // end-8a	GET			/v2/<name>/tags/list										200	404
 // end-8b	GET			/v2/<name>/tags/list?n=<integer>&last=<integer>				200	404
-// end-9	DELETE		/v2/<name>/manifests/<reference>							202	404/400/405
-// end-10	DELETE		/v2/<name>/blobs/<digest>									202	404/405
-// end-11	POST		/v2/<name>/blobs/uploads/?mount=<digest>&from=<other_name>	201	404
 
 // ORAS
 // get-signatures	GET		/oras/artifacts/v1/<name>/manifests/<digest>											200 404/401
@@ -104,11 +30,10 @@ func (r RedirectError) Retry(client *http.Client) (*http.Response, error) {
 // 	# Value conformance
 // <name>		   - is the namespace of the repository, must match [a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*
 // <reference>     - is either a digest or a tag, must match [a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}
-// <artifacttype>  - analagous to refernce except that it allows for symbols
+// <artifacttype>  - analagous to reference except that it allows for symbols
 
 var (
 	referenceRegex = regexp.MustCompile(`([.\w\d:-]+)\/{1,}?([a-z0-9]+(?:[/._-][a-z0-9]+)*(?:[a-z0-9]+(?:[/._-][a-z0-9]+)*)*)[:@]([a-zA-Z0-9_]+:?[a-zA-Z0-9._-]{0,127})`)
-	localhostRegex = regexp.MustCompile(`(?:^localhost$)|(?:^localhost:\d{0,5}$)`)
 )
 
 func Parse(parsing string) (reference string, host string, namespace string, locator string, err error) {
@@ -135,176 +60,13 @@ func ValidateReference(reference string) (string, error) {
 
 	maybe := matches[len(matches)-1]
 
-	endsWith := strings.HasSuffix(reference, ":"+maybe)
+	endsWith := strings.HasSuffix(reference, ":"+maybe) || strings.HasPrefix(reference, "@"+maybe)
 	if endsWith {
 		return maybe, nil
 	}
 
 	return "", fmt.Errorf("malformed reference, a reference should be in the form of {host}/{namespace}:{tag}")
 }
-
-// # Resolving & Fetching Endpoints
-// end-1			GET			/v2/																					200	404/401
-// end-2			GET / HEAD	/v2/<name>/blobs/<digest>																200	404
-// end-3			GET / HEAD	/v2/<name>/manifests/<reference>														200	404
-// end-8a			GET			/v2/<name>/tags/list																	200	404
-// end-8b			GET			/v2/<name>/tags/list?n=<integer>&last=<integer>											200	404
-// list-referrers	GET			/oras/artifacts/v1/<name>/manifests/<digest>/referrers?artifactType=<artifacttype>		200 404/401
-// get-signatures	GET			/oras/artifacts/v1/<name>/manifests/<digest>											200 404/401
-
-const (
-	userAgent               string = "pkg/oras-go"
-	manifestV2json          string = "application/vnd.docker.distribution.manifest.v2+json"
-	manifestlistV2json      string = "application/vnd.docker.distribution.manifest.list.v2+json"
-	v2blobs                 string = "/v2/%s/blobs/%s"
-	v2Manifests             string = "/v2/%s/manifests/%s"
-	v2TagsList              string = "/v2/%s/tags/list"
-	v2TagsFilterListQuery   string = "?n=%d&last=%d"
-	orasListReferrersFormat string = "/oras/artifacts/v1/%s/manifests/%s/referrers?artifactType=%s"
-	orasGetSignatures       string = "/oras/artifacts/v1/%s/manifests/%s"
-)
-
-type req struct {
-	method string
-	format string
-	accept string
-}
-
-// # Useful Monads
-// referencePrepareFunc - This is the signature for preparing an http request by reference
-type referencePrepareFunc func(ctx context.Context, host, ns, reference string) (*http.Request, error)
-
-// digestPrepareFunc - This is the the signature for preparing an http request with a descriptor
-type contentPrepareFunc func(ctx context.Context, host, ns, digest, mediaType string) (*http.Request, error)
-
-// artifactPrepareFunc - This is the the signature for preparing an http request with a descriptor and artifactType
-type artifactPrepareFunc func(ctx context.Context, host, ns, digest, mediaType, artifactType string) (*http.Request, error)
-
-// prepare - is a function used by the requests in the table `Resolving & Fetching Endpoints` above this line
-func (r req) prepare() referencePrepareFunc {
-	return func(c context.Context, host, ns, ref string) (*http.Request, error) {
-		var (
-			path string
-		)
-
-		if ref == "" {
-			path = r.format
-		} else {
-			path = fmt.Sprintf(r.format, ns, ref)
-		}
-
-		protocol := "https://"
-		if localhostRegex.MatchString(host) {
-			protocol = "http://"
-		}
-
-		url, err := url.Parse(protocol + host + path)
-		if err != nil {
-			return nil, err
-		}
-		req, err := http.NewRequestWithContext(c, r.method, url.String(), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Add("Accept", strings.Join([]string{
-			manifestV2json,
-			artifactspec.MediaTypeArtifactManifest,
-			ocispec.MediaTypeImageManifest,
-			"*/*"}, ", "))
-
-		return req, nil
-	}
-}
-
-// prepareWithDescriptor - is a function that prepares a blob url with a descriptor
-func (r req) prepareWithDescriptor() contentPrepareFunc {
-	return func(c context.Context, host, ns, digest, mediaType string) (*http.Request, error) {
-		path := fmt.Sprintf(r.format, ns, digest)
-
-		protocol := "https://"
-		if localhostRegex.MatchString(host) {
-			protocol = "http://"
-		}
-
-		url, err := url.Parse(protocol + host + path)
-		if err != nil {
-			return nil, err
-		}
-		req, err := http.NewRequestWithContext(c, r.method, url.String(), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Add("Accept", strings.Join([]string{"*/*"}, ", "))
-
-		return req, nil
-	}
-}
-
-func (r req) prepareWithArtifactType() artifactPrepareFunc {
-	return func(c context.Context, host, ns, digest, mediaType, artifactType string) (*http.Request, error) {
-		var (
-			path string
-		)
-
-		// Special case: if this is e1 since there are no parameters for that call
-		path = fmt.Sprintf(r.format, ns, digest, artifactType)
-
-		protocol := "https://"
-		if localhostRegex.MatchString(host) {
-			protocol = "http://"
-		}
-
-		url, err := url.Parse(protocol + host + path)
-		if err != nil {
-			return nil, err
-		}
-
-		req, err := http.NewRequestWithContext(c, r.method, url.String(), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		return req, nil
-	}
-}
-
-var endpoints = struct {
-	e1            req
-	e3HEAD        req
-	e3GET         req
-	e2HEAD        req
-	e2GET         req
-	e8a           req
-	e8b           req
-	listReferrers req
-	getSignatures req
-}{
-	req{"GET", "/v2", manifestV2json},
-	req{"HEAD", v2Manifests, manifestV2json},
-	req{"GET", v2Manifests, manifestV2json},
-	req{"HEAD", v2blobs, manifestV2json},
-	req{"GET", v2blobs, manifestV2json},
-	req{"GET", v2TagsList, manifestV2json},
-	req{"GET", v2TagsFilterListQuery + v2TagsFilterListQuery, manifestV2json},
-	req{"GET", orasListReferrersFormat, artifactspec.MediaTypeArtifactManifest},
-	req{"GET", orasGetSignatures, ""},
-}
-
-// Error & Validation
-
-// Format of an error response
-// {
-// 	"errors": [
-// 		{
-// 			"code": "<error identifier, see below>",
-// 			"message": "<message describing condition>",
-// 			"detail": "<unstructured>"
-// 		},
-// 		...
-// 	]
-// }
 
 // code-1	BLOB_UNKNOWN			blob unknown to registry
 // code-2	BLOB_UPLOAD_INVALID		blob upload invalid

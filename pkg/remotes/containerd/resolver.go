@@ -19,15 +19,9 @@ type resolver struct {
 	discoverer orasRemotes.DiscoverFunc
 }
 
-func containerdPusher(registryFuncs *orasRemotes.RegistryFunctions, opts ...content.WriterOpt) ctrRemotes.PusherFunc {
+func containerdPusher(pusher ctrRemotes.PusherFunc, opts ...content.WriterOpt) ctrRemotes.PusherFunc {
 	return func(ctx context.Context, desc ocispec.Descriptor) (content.Writer, error) {
-
-		store, err := registryFuncs.Pusher()(ctx, desc)
-		if err != nil {
-			return nil, err
-		}
-
-		writer, err := store.Writer(ctx, opts...)
+		writer, err := pusher(ctx, desc)
 		if err != nil {
 			return nil, err
 		}
